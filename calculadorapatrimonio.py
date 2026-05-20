@@ -268,28 +268,3 @@ fig_patrimonio.update_layout(
 )
 
 st.plotly_chart(fig_patrimonio, use_container_width=True)
-```
-
----
-
-# Próxima Etapa Recomendada
-
-## Construção do MVP funcional
-
-### Componentes prioritários:
-
-1. Inputs patrimoniais;
-2. Puxar ETFs automaticamente;
-3. Upload da RF histórica;
-4. Cálculo de volatilidade;
-5. Correlação;
-6. Evolução patrimonial;
-7. Gráficos;
-8. Simulação básica.
-
-Após isso:
-
-* Monte Carlo;
-* Otimização;
-* Stress test;
-* PDF institucional.
