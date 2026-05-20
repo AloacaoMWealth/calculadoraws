@@ -125,6 +125,32 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.set_page_config(
+    page_title="M Wealth - Simulador Quantitativo",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown(
+    """
+    <style>
+        .stApp {
+            background-color: #131925 !important;
+            color: #FFFFFF !important;
+        }
+
+        section[data-testid="stSidebar"] {
+            background-color: #0E131D !important;
+        }
+
+        html, body, [class*="css"] {
+            color: #FFFFFF !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # =========================
 # FUNÇÕES AUXILIARES
