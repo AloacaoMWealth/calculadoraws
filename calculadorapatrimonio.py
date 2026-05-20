@@ -21,6 +21,82 @@ st.set_page_config(
     layout="wide"
 )
 
+# =========================
+# IDENTIDADE VISUAL
+# =========================
+
+COR_PRINCIPAL = "#131925"
+
+st.markdown(
+    f"""
+    <style>
+        .stApp {{
+            background-color: {COR_PRINCIPAL};
+            color: #FFFFFF;
+        }}
+
+        section[data-testid="stSidebar"] {{
+            background-color: #0E131D;
+        }}
+
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] span {{
+            color: #FFFFFF !important;
+        }}
+
+        h1, h2, h3, h4 {{
+            color: #FFFFFF;
+        }}
+
+        .stMetric {{
+            background-color: #1C2433;
+            padding: 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }}
+
+        div[data-testid="stMetricValue"] {{
+            color: #FFFFFF;
+        }}
+
+        div[data-testid="stMetricLabel"] {{
+            color: #D8DCE3;
+        }}
+
+        .stDataFrame {{
+            border-radius: 12px;
+        }}
+
+        div[data-testid="stTabs"] button {{
+            color: #FFFFFF;
+        }}
+
+        div[data-testid="stTabs"] button[aria-selected="true"] {{
+            border-bottom: 3px solid #FFFFFF;
+        }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# =========================
+# CABEÇALHO
+# =========================
+
+col_logo, col_titulo = st.columns([1, 5])
+
+with col_logo:
+    st.image("Logo-M-Wealth.png", width=110)
+
+with col_titulo:
+    st.title("Simulador Patrimonial Internacional")
+    st.markdown(
+        """
+        Ferramenta para planejar, de forma gradual e controlada, a exposição internacional em ETFs.
+        """
+    )
+
 
 # =========================
 # FUNÇÕES AUXILIARES
@@ -312,14 +388,14 @@ def calcular_stress(peso_rf, peso_etf, cenarios):
 # TÍTULO
 # =========================
 
-st.title("M Wealth - Simulador Quantitativo")
+#st.title("M Wealth - Simulador Quantitativo")
 
-st.markdown(
-    """
-    Simulador institucional para construção gradual de exposição internacional em ETFs,
-    com glide path, cenários, risco histórico, stress test e Monte Carlo.
-    """
-)
+#st.markdown(
+#    """
+#    Simulador institucional para construção gradual de exposição internacional em ETFs,
+#    com plano de evolução da carteira, cenários, risco histórico, stress test e Monte Carlo.
+#    """
+#)
 
 
 # =========================
@@ -330,12 +406,39 @@ st.sidebar.header("Configurações")
 
 hoje = date.today()
 
-patrimonio_inicial = st.sidebar.number_input(
-    "Patrimônio Inicial",
-    value=4098000.0,
-    step=100000.0,
-    min_value=0.0
+def moeda_para_float(valor):
+    """
+    Converte texto em padrão brasileiro para float.
+    Ex:
+    R$ 4.098.000,00 -> 4098000.00
+    """
+    if isinstance(valor, (int, float)):
+        return float(valor)
+
+    valor = str(valor)
+    valor = valor.replace("R$", "")
+    valor = valor.replace(" ", "")
+    valor = valor.replace(".", "")
+    valor = valor.replace(",", ".")
+
+    try:
+        return float(valor)
+    except Exception:
+        return 0.0
+
+
+def float_para_moeda(valor):
+    """
+    Converte float para padrão brasileiro.
+    """
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+patrimonio_inicial_txt = st.sidebar.text_input(
+    "Patrimônio inicial",
+    value="R$ 4.098.000,00"
 )
+
+patrimonio_inicial = moeda_para_float(patrimonio_inicial_txt)
 
 st.sidebar.subheader("Horizonte")
 
@@ -368,33 +471,30 @@ st.sidebar.write(f"Meta RF: **{meta_rf}%**")
 
 st.sidebar.subheader("Aportes")
 
-aporte_2026 = st.sidebar.number_input(
-    "Aporte Mensal 2026",
-    value=150000.0,
-    step=50000.0,
-    min_value=0.0
+aporte_2026_txt = st.sidebar.text_input(
+    "Aporte mensal em 2026",
+    value="R$ 150.000,00"
 )
 
-aporte_2027 = st.sidebar.number_input(
-    "Aporte Mensal 2027",
-    value=400000.0,
-    step=50000.0,
-    min_value=0.0
+aporte_2027_txt = st.sidebar.text_input(
+    "Aporte mensal em 2027",
+    value="R$ 400.000,00"
 )
 
-aporte_2028 = st.sidebar.number_input(
-    "Aporte Mensal 2028",
-    value=500000.0,
-    step=50000.0,
-    min_value=0.0
+aporte_2028_txt = st.sidebar.text_input(
+    "Aporte mensal em 2028",
+    value="R$ 500.000,00"
 )
 
-aporte_padrao = st.sidebar.number_input(
-    "Aporte Mensal para outros anos",
-    value=500000.0,
-    step=50000.0,
-    min_value=0.0
+aporte_padrao_txt = st.sidebar.text_input(
+    "Aporte mensal após 2028",
+    value="R$ 500.000,00"
 )
+
+aporte_2026 = moeda_para_float(aporte_2026_txt)
+aporte_2027 = moeda_para_float(aporte_2027_txt)
+aporte_2028 = moeda_para_float(aporte_2028_txt)
+aporte_padrao = moeda_para_float(aporte_padrao_txt)
 
 st.sidebar.subheader("Proxy de RF Offshore")
 
@@ -508,7 +608,7 @@ correlacao_rf_etf = base_carteira.corr().iloc[0, 1]
 
 
 # =========================
-# GLIDE PATH
+# Plano de evolução da carteira
 # =========================
 
 fluxo_df = gerar_fluxo_mensal(
@@ -546,7 +646,7 @@ sharpe_simples = retorno_final / vol_final if vol_final != 0 else np.nan
 
 
 # =========================
-# EVOLUÇÃO DA VOLATILIDADE PELO GLIDE PATH
+# EVOLUÇÃO DA VOLATILIDADE PELO Plano de evolução da carteira
 # =========================
 
 historico_mensal_df["Volatilidade Projetada"] = np.nan
@@ -757,7 +857,7 @@ with aba_resumo:
     )
 
     fig_vol.update_layout(
-        title="Volatilidade Anualizada Projetada pelo Glide Path",
+        title="Volatilidade Anualizada Projetada pelo Plano de evolução da carteira",
         xaxis_title="Data",
         yaxis_title="Volatilidade Anualizada (%)"
     )
@@ -1013,11 +1113,13 @@ with aba_simulacoes:
 
     st.plotly_chart(fig_mc, use_container_width=True)
 
+    percentis_tabela = percentis_mc.tail(12).copy()
+    percentis_tabela.index = pd.to_datetime(percentis_tabela.index).strftime("%d/%m/%Y")
+    
     st.dataframe(
-        percentis_mc.tail(12).style.format("R$ {:,.2f}"),
+        percentis_tabela.style.format("R$ {:,.2f}"),
         use_container_width=True
     )
-
     st.divider()
 
     # =========================
