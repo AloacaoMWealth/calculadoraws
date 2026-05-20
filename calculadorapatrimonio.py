@@ -598,25 +598,12 @@ etfs = [
 
 etfs = list(dict.fromkeys(etfs))
 
-st.sidebar.subheader("Histórico")
+# Histórico e simulações definidos como padrão para simplificar o uso do app.
+ANOS_HISTORICO_PADRAO = 5
+N_SIMULACOES_PADRAO = 2000
 
-anos_historico = st.sidebar.slider(
-    "Anos de histórico",
-    min_value=1,
-    max_value=10,
-    value=3,
-    step=1
-)
-
-data_inicio_historico = hoje - timedelta(days=365 * anos_historico)
-
-n_simulacoes = st.sidebar.slider(
-    "Quantidade de simulações",
-    min_value=500,
-    max_value=5000,
-    value=1000,
-    step=500
-)
+data_inicio_historico = hoje - timedelta(days=365 * ANOS_HISTORICO_PADRAO)
+n_simulacoes = N_SIMULACOES_PADRAO
 
 
 # =========================
@@ -892,60 +879,68 @@ with aba_resumo:
     with col8:
         st.metric("Eficiência risco-retorno", f"{eficiencia_risco_retorno:.2f}")
 
-    st.subheader("Evolução até a meta")
+    col_grafico_meta, col_grafico_oscilacao = st.columns(2)
 
-    fig_plano = go.Figure()
+    with col_grafico_meta:
 
-    fig_plano.add_trace(
-        go.Scatter(
-            x=historico_mensal_df["Data"],
-            y=historico_mensal_df["% ETFs"] * 100,
-            mode="lines+markers",
-            name="% em ETFs"
+        st.subheader("Evolução até a meta")
+
+        fig_plano = go.Figure()
+
+        fig_plano.add_trace(
+            go.Scatter(
+                x=historico_mensal_df["Data"],
+                y=historico_mensal_df["% ETFs"] * 100,
+                mode="lines+markers",
+                name="% em ETFs"
+            )
         )
-    )
 
-    fig_plano.add_hline(
-        y=meta_etfs,
-        line_dash="dash",
-        annotation_text="Meta final",
-        annotation_position="top left"
-    )
+        fig_plano.add_hline(
+            y=meta_etfs,
+            line_dash="dash",
+            annotation_text="Meta final",
+            annotation_position="top left"
+        )
 
-    fig_plano.update_layout(
-        title="Evolução da Exposição em ETFs",
-        xaxis_title="Data",
-        yaxis_title="% em ETFs"
-    )
+        fig_plano.update_layout(
+            title="Exposição em ETFs",
+            xaxis_title="Data",
+            yaxis_title="% em ETFs",
+            height=430
+        )
 
-    st.plotly_chart(fig_plano, use_container_width=True)
+        st.plotly_chart(fig_plano, use_container_width=True)
 
-    st.subheader("Evolução da oscilação esperada")
+    with col_grafico_oscilacao:
+
+        st.subheader("Evolução da oscilação esperada")
+
+        fig_oscilacao = go.Figure()
+
+        fig_oscilacao.add_trace(
+            go.Scatter(
+                x=historico_mensal_df["Data"],
+                y=historico_mensal_df["Oscilação Projetada"] * 100,
+                mode="lines+markers",
+                name="Oscilação projetada"
+            )
+        )
+
+        fig_oscilacao.update_layout(
+            title="Oscilação anualizada estimada",
+            xaxis_title="Data",
+            yaxis_title="Oscilação anualizada (%)",
+            height=430
+        )
+
+        st.plotly_chart(fig_oscilacao, use_container_width=True)
 
     st.markdown(
         """
         A oscilação projetada mostra como o risco da carteira tende a mudar conforme a exposição em ETFs aumenta ao longo do tempo.
         """
     )
-
-    fig_oscilacao = go.Figure()
-
-    fig_oscilacao.add_trace(
-        go.Scatter(
-            x=historico_mensal_df["Data"],
-            y=historico_mensal_df["Oscilação Projetada"] * 100,
-            mode="lines+markers",
-            name="Oscilação projetada"
-        )
-    )
-
-    fig_oscilacao.update_layout(
-        title="Oscilação Anualizada Projetada pelo Plano de Evolução",
-        xaxis_title="Data",
-        yaxis_title="Oscilação anualizada (%)"
-    )
-
-    st.plotly_chart(fig_oscilacao, use_container_width=True)
 
     st.subheader("Plano mensal de aportes")
 
@@ -1013,18 +1008,18 @@ with aba_ativos:
         """
     )
 
+    etfs_texto = ", ".join(etfs_validos)
+
     col_a1, col_a2, col_a3 = st.columns(3)
 
     with col_a1:
         st.metric("Referência de Renda Fixa", referencia_renda_fixa)
 
     with col_a2:
-        st.metric("Quantidade de ETFs", len(etfs_validos))
+        st.metric("ETFs utilizados", etfs_texto)
 
     with col_a3:
         st.metric("Relação entre Renda Fixa e ETFs", f"{relacao_renda_fixa_etfs:.2f}")
-
-    st.write("ETFs considerados:", etfs_validos)
 
     metricas_risco = pd.DataFrame({
         "Classe": ["Renda Fixa Internacional em BRL", "ETFs Internacionais em BRL"],
@@ -1044,41 +1039,52 @@ with aba_ativos:
         use_container_width=True
     )
 
-    st.subheader("Relação histórica entre as classes")
+    col_matriz, col_perf = st.columns(2)
 
-    fig_corr = px.imshow(
-        base_carteira.corr(),
-        text_auto=".2f",
-        aspect="auto",
-        title="Relação Histórica entre Renda Fixa e ETFs"
-    )
+    with col_matriz:
 
-    st.plotly_chart(fig_corr, use_container_width=True)
+        st.subheader("Matriz de risco entre as classes")
 
-    st.subheader("Performance histórica em reais")
+        matriz_risco_visual = matriz_cov_anual.copy()
 
-    perf = (1 + base_carteira).cumprod() - 1
-
-    fig_perf = go.Figure()
-
-    for col in perf.columns:
-        fig_perf.add_trace(
-            go.Scatter(
-                x=perf.index,
-                y=perf[col],
-                mode="lines",
-                name=col
-            )
+        fig_matriz_risco = px.imshow(
+            matriz_risco_visual,
+            text_auto=".4f",
+            aspect="auto",
+            title="Matriz de covariância anualizada"
         )
 
-    fig_perf.update_layout(
-        title="Retorno Acumulado em BRL",
-        yaxis_tickformat=".0%",
-        xaxis_title="Data",
-        yaxis_title="Retorno acumulado"
-    )
+        fig_matriz_risco.update_layout(height=430)
 
-    st.plotly_chart(fig_perf, use_container_width=True)
+        st.plotly_chart(fig_matriz_risco, use_container_width=True)
+
+    with col_perf:
+
+        st.subheader("Performance histórica em reais")
+
+        perf = (1 + base_carteira).cumprod() - 1
+
+        fig_perf = go.Figure()
+
+        for col in perf.columns:
+            fig_perf.add_trace(
+                go.Scatter(
+                    x=perf.index,
+                    y=perf[col],
+                    mode="lines",
+                    name=col
+                )
+            )
+
+        fig_perf.update_layout(
+            title="Retorno acumulado em BRL",
+            yaxis_tickformat=".0%",
+            xaxis_title="Data",
+            yaxis_title="Retorno acumulado",
+            height=430
+        )
+
+        st.plotly_chart(fig_perf, use_container_width=True)
 
     with st.expander("Ver detalhes técnicos do modelo"):
         st.markdown(
@@ -1240,13 +1246,14 @@ with aba_simulacoes:
 
     st.plotly_chart(fig_mc, use_container_width=True)
 
-    percentis_tabela = percentis_mc.tail(12).copy()
-    percentis_tabela.index = pd.to_datetime(percentis_tabela.index).strftime("%d/%m/%Y")
+    with st.expander("Ver tabela da simulação probabilística"):
+        percentis_tabela = percentis_mc.tail(12).copy()
+        percentis_tabela.index = pd.to_datetime(percentis_tabela.index).strftime("%d/%m/%Y")
 
-    st.dataframe(
-        percentis_tabela.style.format("R$ {:,.2f}"),
-        use_container_width=True
-    )
+        st.dataframe(
+            percentis_tabela.style.format("R$ {:,.2f}"),
+            use_container_width=True
+        )
 
     st.divider()
 
