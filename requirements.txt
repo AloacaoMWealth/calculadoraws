@@ -1,0 +1,11 @@
+pandas
+numpy
+plotly
+yfinance
+matplotlib
+scipy
+statsmodels
+cvxpy
+PyPortfolioOpt
+pandas_datareader
+openpyxl
