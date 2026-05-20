@@ -523,8 +523,6 @@ if data_final <= hoje:
 
 meses = calcular_meses(hoje, data_final)
 
-st.sidebar.write(f"Meses até a meta: **{meses}**")
-
 meta_etfs = st.sidebar.slider(
     "Meta final em ETFs (%)",
     min_value=0,
