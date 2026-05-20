@@ -494,7 +494,7 @@ with col_titulo:
     st.title("Simulador Patrimonial Internacional")
     st.markdown(
         """
-        Ferramenta para planejar, de forma gradual e controlada, a exposição internacional em ETFs.
+        Ferramenta para planhemjamento gradual e controlada, de exposição internacional em ETFs.
         """
     )
 
