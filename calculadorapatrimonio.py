@@ -111,10 +111,22 @@ etfs = st.sidebar.multiselect(
 # =========================
 
 @st.cache_data
-
 def baixar_dados(tickers, inicio="2022-01-01"):
 
-    dados = yf.download(tickers, start=inicio)["Adj Close"]
+    dados = yf.download(
+        tickers,
+        start=inicio,
+        auto_adjust=True
+    )
+
+    # Caso venha MultiIndex
+    if isinstance(dados.columns, pd.MultiIndex):
+
+        dados = dados["Close"]
+
+    else:
+
+        dados = dados[["Close"]]
 
     return dados
 
@@ -168,7 +180,9 @@ if len(etfs) > 0:
 
     st.subheader("📊 Evolução Histórica")
 
-    performance = (1 + retornos).cumprod()
+    performance = (1 + retornos).cumprod() - 1
+    
+    st.write(dados_etfs.head())
 
     fig_perf = go.Figure()
 
