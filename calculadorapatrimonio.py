@@ -10,6 +10,17 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from datetime import date, timedelta
+from io import BytesIO
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    REPORTLAB_DISPONIVEL = True
+except Exception:
+    REPORTLAB_DISPONIVEL = False
 
 
 # =========================
@@ -476,6 +487,202 @@ def formatar_datas_tabela(df, coluna_data="Data"):
     return tabela
 
 
+def formatar_percentual(valor):
+    """
+    Formata percentual no padrão brasileiro.
+    """
+    try:
+        return f"{valor:.2%}".replace(".", ",")
+    except Exception:
+        return valor
+
+
+def calcular_fronteira_eficiente(retorno_renda_fixa, retorno_etfs, matriz_cov_anual, pontos=101):
+    """
+    Calcula combinações possíveis entre Renda Fixa Internacional e ETFs.
+    Como o modelo tem duas grandes classes, a fronteira é construída variando
+    o peso em ETFs de 0% a 100%.
+    """
+    linhas = []
+
+    for peso_etfs in np.linspace(0, 1, pontos):
+        peso_renda_fixa = 1 - peso_etfs
+        pesos = np.array([peso_renda_fixa, peso_etfs])
+
+        retorno = peso_renda_fixa * retorno_renda_fixa + peso_etfs * retorno_etfs
+        oscilacao = np.sqrt(np.dot(pesos.T, np.dot(matriz_cov_anual.values, pesos)))
+        eficiencia = retorno / oscilacao if oscilacao != 0 else np.nan
+
+        linhas.append({
+            "% em ETFs": peso_etfs,
+            "% em Renda Fixa": peso_renda_fixa,
+            "Retorno esperado": retorno,
+            "Oscilação esperada": oscilacao,
+            "Eficiência risco-retorno": eficiencia
+        })
+
+    return pd.DataFrame(linhas)
+
+
+def gerar_pdf_relatorio(
+    patrimonio_inicial,
+    data_final,
+    meses,
+    meta_etfs,
+    meta_renda_fixa,
+    resumo,
+    oscilacao_final,
+    eficiencia_risco_retorno,
+    referencia_renda_fixa,
+    etfs_validos,
+    cenarios_df,
+    percentis_mc,
+    crise_df
+):
+    """
+    Gera um PDF executivo simples para apresentação ao cliente.
+    """
+    if not REPORTLAB_DISPONIVEL:
+        return None
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1.5 * cm,
+        leftMargin=1.5 * cm,
+        topMargin=1.3 * cm,
+        bottomMargin=1.3 * cm
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name="TituloMW",
+        parent=styles["Title"],
+        textColor=colors.HexColor("#131925"),
+        fontSize=18,
+        leading=22,
+        spaceAfter=14
+    ))
+    styles.add(ParagraphStyle(
+        name="SubtituloMW",
+        parent=styles["Heading2"],
+        textColor=colors.HexColor("#131925"),
+        fontSize=12,
+        leading=15,
+        spaceBefore=10,
+        spaceAfter=8
+    ))
+    styles.add(ParagraphStyle(
+        name="TextoMW",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=12
+    ))
+
+    elementos = []
+
+    elementos.append(Paragraph("M Wealth - Simulador Patrimonial Internacional", styles["TituloMW"]))
+    elementos.append(Paragraph(
+        "Relatório executivo de planejamento para construção gradual de exposição internacional em ETFs.",
+        styles["TextoMW"]
+    ))
+    elementos.append(Spacer(1, 8))
+
+    dados_resumo = [
+        ["Indicador", "Valor"],
+        ["Patrimônio inicial", formatar_moeda(patrimonio_inicial)],
+        ["Data final do estudo", pd.to_datetime(data_final).strftime("%d/%m/%Y")],
+        ["Meses até a meta", str(meses)],
+        ["Meta em ETFs", f"{meta_etfs:.0f}%"],
+        ["Meta em Renda Fixa", f"{meta_renda_fixa:.0f}%"],
+        ["Patrimônio estimado sem rentabilidade", formatar_moeda(resumo["patrimonio_final_sem_rentabilidade"])],
+        ["Meta financeira em ETFs", formatar_moeda(resumo["meta_etfs_financeira"])],
+        ["Aporte médio mensal em ETFs", formatar_moeda(resumo["aporte_mensal_medio_etfs"])],
+        ["Aporte médio mensal em Renda Fixa", formatar_moeda(resumo["aporte_mensal_medio_renda_fixa"])],
+        ["Oscilação esperada da carteira", formatar_percentual(oscilacao_final)],
+        ["Eficiência risco-retorno", f"{eficiencia_risco_retorno:.2f}"],
+    ]
+
+    elementos.append(Paragraph("Resumo Executivo", styles["SubtituloMW"]))
+    tabela_resumo = Table(dados_resumo, colWidths=[8.2 * cm, 7.2 * cm])
+    tabela_resumo.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#131925")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D8DCE3")),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F7F8FA")),
+        ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F5F8")]),
+    ]))
+    elementos.append(tabela_resumo)
+    elementos.append(Spacer(1, 10))
+
+    elementos.append(Paragraph("Ativos utilizados", styles["SubtituloMW"]))
+    elementos.append(Paragraph(
+        f"Referência de Renda Fixa Internacional: {referencia_renda_fixa}. ETFs considerados: {', '.join(etfs_validos)}.",
+        styles["TextoMW"]
+    ))
+
+    elementos.append(Paragraph("Cenários patrimoniais", styles["SubtituloMW"]))
+    cenarios_tabela = [["Cenário", "Retorno RF a.a.", "Retorno ETFs a.a.", "Patrimônio Final", "% Final em ETFs"]]
+    for _, row in cenarios_df.iterrows():
+        cenarios_tabela.append([
+            row["Cenário"],
+            formatar_percentual(row["Retorno Renda Fixa a.a."]),
+            formatar_percentual(row["Retorno ETFs a.a."]),
+            formatar_moeda(row["Patrimônio Final"]),
+            formatar_percentual(row["% Final em ETFs"]),
+        ])
+
+    tabela_cenarios = Table(cenarios_tabela, colWidths=[3.2 * cm, 3.1 * cm, 3.1 * cm, 4.0 * cm, 2.8 * cm])
+    tabela_cenarios.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#131925")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D8DCE3")),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F5F8")]),
+    ]))
+    elementos.append(tabela_cenarios)
+
+    elementos.append(Paragraph("Simulação probabilística", styles["SubtituloMW"]))
+    elementos.append(Paragraph(
+        f"Cenário central ao final do período: {formatar_moeda(percentis_mc.iloc[-1]['Cenário central'])}. "
+        f"Cenário pessimista: {formatar_moeda(percentis_mc.iloc[-1]['Cenário pessimista'])}. "
+        f"Cenário otimista: {formatar_moeda(percentis_mc.iloc[-1]['Cenário otimista'])}.",
+        styles["TextoMW"]
+    ))
+
+    elementos.append(Paragraph("Simulação de crise", styles["SubtituloMW"]))
+    crise_tabela = [["Cenário", "Impacto na Carteira"]]
+    for _, row in crise_df.iterrows():
+        crise_tabela.append([row["Cenário"], formatar_percentual(row["Impacto na Carteira"])])
+
+    tabela_crise = Table(crise_tabela, colWidths=[10 * cm, 5.4 * cm])
+    tabela_crise.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#131925")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D8DCE3")),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F5F8")]),
+    ]))
+    elementos.append(tabela_crise)
+
+    elementos.append(Spacer(1, 12))
+    elementos.append(Paragraph(
+        "Observação: este relatório tem finalidade de estudo e simulação. Os resultados dependem das premissas informadas e dos dados históricos utilizados.",
+        styles["TextoMW"]
+    ))
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+
 # =========================
 # CABEÇALHO
 # =========================
@@ -494,7 +701,7 @@ with col_titulo:
     st.title("Simulador Patrimonial Internacional")
     st.markdown(
         """
-        Ferramenta para planhemjamento gradual e controlada, de exposição internacional em ETFs.
+        Ferramenta para planejamento gradual e controlada de exposição internacional em ETFs.
         """
     )
 
@@ -502,6 +709,7 @@ with col_titulo:
 # =========================
 # SIDEBAR
 # =========================
+
 
 hoje = date.today()
 
@@ -522,6 +730,8 @@ if data_final <= hoje:
     st.stop()
 
 meses = calcular_meses(hoje, data_final)
+
+st.sidebar.write(f"Meses até a meta: **{meses}**")
 
 meta_etfs = st.sidebar.slider(
     "Meta final em ETFs (%)",
@@ -702,6 +912,15 @@ retorno_final = (
 
 eficiencia_risco_retorno = retorno_final / oscilacao_final if oscilacao_final != 0 else np.nan
 
+fronteira_df = calcular_fronteira_eficiente(
+    retorno_renda_fixa=ret_renda_fixa_aa,
+    retorno_etfs=ret_etfs_aa,
+    matriz_cov_anual=matriz_cov_anual,
+    pontos=101
+)
+
+melhor_eficiencia = fronteira_df.loc[fronteira_df["Eficiência risco-retorno"].idxmax()]
+
 
 # =========================
 # EVOLUÇÃO DA OSCILAÇÃO PELO PLANO
@@ -840,6 +1059,33 @@ with aba_resumo:
         A ideia é construir a exposição de forma gradual, sem necessidade de uma mudança brusca na carteira atual.
         """
     )
+
+    pdf_relatorio = gerar_pdf_relatorio(
+        patrimonio_inicial=patrimonio_inicial,
+        data_final=data_final,
+        meses=meses,
+        meta_etfs=meta_etfs,
+        meta_renda_fixa=meta_renda_fixa,
+        resumo=resumo,
+        oscilacao_final=oscilacao_final,
+        eficiencia_risco_retorno=eficiencia_risco_retorno,
+        referencia_renda_fixa=referencia_renda_fixa,
+        etfs_validos=etfs_validos,
+        cenarios_df=cenarios_df,
+        percentis_mc=percentis_mc,
+        crise_df=crise_df
+    )
+
+    if pdf_relatorio is not None:
+        st.download_button(
+            label="Baixar relatório em PDF",
+            data=pdf_relatorio,
+            file_name="relatorio_simulador_patrimonial_mwealth.pdf",
+            mime="application/pdf",
+            use_container_width=False
+        )
+    else:
+        st.warning("Para habilitar o PDF, adicione reportlab no requirements.txt.")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -1076,6 +1322,78 @@ with aba_ativos:
 
         st.plotly_chart(fig_perf, use_container_width=True)
 
+    st.subheader("Fronteira eficiente")
+
+    st.markdown(
+        """
+        A fronteira eficiente mostra combinações possíveis entre Renda Fixa Internacional e ETFs.
+        A ideia é visualizar quanto retorno esperado a carteira pode buscar para diferentes níveis de oscilação.
+        O ponto destacado representa a meta escolhida para esta simulação.
+        """
+    )
+
+    fig_fronteira = px.scatter(
+        fronteira_df,
+        x="Oscilação esperada",
+        y="Retorno esperado",
+        color="% em ETFs",
+        title="Combinações possíveis entre Renda Fixa e ETFs",
+        labels={
+            "Oscilação esperada": "Oscilação esperada",
+            "Retorno esperado": "Retorno esperado",
+            "% em ETFs": "% em ETFs"
+        }
+    )
+
+    ponto_meta = pd.DataFrame({
+        "Oscilação esperada": [oscilacao_final],
+        "Retorno esperado": [retorno_final],
+        "Carteira": ["Meta escolhida"]
+    })
+
+    fig_fronteira.add_trace(
+        go.Scatter(
+            x=ponto_meta["Oscilação esperada"],
+            y=ponto_meta["Retorno esperado"],
+            mode="markers+text",
+            name="Meta escolhida",
+            text=["Meta"],
+            textposition="top center",
+            marker=dict(size=14, symbol="star", color="#FFFFFF", line=dict(width=2, color="#7895E8"))
+        )
+    )
+
+    fig_fronteira.add_trace(
+        go.Scatter(
+            x=[melhor_eficiencia["Oscilação esperada"]],
+            y=[melhor_eficiencia["Retorno esperado"]],
+            mode="markers+text",
+            name="Maior eficiência histórica",
+            text=["Mais eficiente"],
+            textposition="bottom center",
+            marker=dict(size=12, symbol="diamond", color="#7895E8")
+        )
+    )
+
+    fig_fronteira.update_layout(
+        xaxis_tickformat=".1%",
+        yaxis_tickformat=".1%",
+        height=460
+    )
+
+    st.plotly_chart(fig_fronteira, use_container_width=True)
+
+    col_fronteira_1, col_fronteira_2, col_fronteira_3 = st.columns(3)
+
+    with col_fronteira_1:
+        st.metric("Meta escolhida", f"{meta_renda_fixa}% Renda Fixa / {meta_etfs}% ETFs")
+
+    with col_fronteira_2:
+        st.metric("Retorno esperado da meta", f"{retorno_final:.2%}")
+
+    with col_fronteira_3:
+        st.metric("Maior eficiência histórica", f"{melhor_eficiencia['% em ETFs']:.0%} em ETFs")
+
     with st.expander("Ver detalhes técnicos do modelo"):
         st.markdown(
             """
@@ -1105,6 +1423,21 @@ with aba_ativos:
 
         st.dataframe(
             matriz_cov_anual.style.format("{:.6f}"),
+            use_container_width=True
+        )
+
+        st.subheader("Pontos da fronteira eficiente")
+
+        fronteira_tabela = fronteira_df.copy()
+
+        st.dataframe(
+            fronteira_tabela.style.format({
+                "% em ETFs": "{:.0%}",
+                "% em Renda Fixa": "{:.0%}",
+                "Retorno esperado": "{:.2%}",
+                "Oscilação esperada": "{:.2%}",
+                "Eficiência risco-retorno": "{:.2f}"
+            }),
             use_container_width=True
         )
 
