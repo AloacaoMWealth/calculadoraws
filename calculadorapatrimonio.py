@@ -50,11 +50,6 @@ def calcular_meses(data_inicial, data_final):
 
 @st.cache_data(show_spinner=False)
 def baixar_dados(tickers, inicio):
-    """
-    Baixa dados históricos dos ativos via yfinance.
-    Usa Close com auto_adjust=True para evitar erro de Adj Close.
-    Trata tanto um ticker quanto múltiplos tickers.
-    """
 
     if isinstance(tickers, str):
         tickers = [tickers]
@@ -97,6 +92,135 @@ def baixar_dados(tickers, inicio):
     dados = dados.dropna(axis=1, how="all")
 
     return dados
+
+@st.cache_data(show_spinner=False)
+def baixar_dolar(inicio):
+    """
+    Baixa o histórico do dólar USD/BRL via Yahoo Finance.
+    Ticker usado: BRL=X
+    """
+    dados = yf.download(
+        tickers="BRL=X",
+        start=inicio,
+        auto_adjust=True,
+        progress=False
+    )
+
+    if dados.empty:
+        return pd.DataFrame()
+
+    if isinstance(dados.columns, pd.MultiIndex):
+        dados = dados["Close"]
+    else:
+        dados = dados[["Close"]]
+
+    dados.columns = ["USD_BRL"]
+
+    return dados.dropna()
+
+
+def converter_retorno_percentual(valor):
+    """
+    Converte retornos em formato texto, percentual ou número decimal.
+    Aceita:
+    - '5,98%'
+    - '5.98%'
+    - 0.0598
+    - 5.98
+    """
+    if pd.isna(valor):
+        return np.nan
+
+    if isinstance(valor, str):
+        valor = valor.strip().replace("%", "").replace(",", ".")
+
+        try:
+            valor = float(valor)
+        except Exception:
+            return np.nan
+
+    if abs(valor) > 1:
+        valor = valor / 100
+
+    return valor
+
+
+def tratar_upload_rf(arquivo):
+    """
+    Trata upload da rentabilidade histórica da RF offshore.
+    Espera uma planilha com pelo menos duas colunas:
+    - Data
+    - Retorno
+    """
+    if arquivo is None:
+        return pd.DataFrame()
+
+    try:
+        if arquivo.name.endswith(".csv"):
+            df = pd.read_csv(arquivo)
+        else:
+            df = pd.read_excel(arquivo)
+    except Exception as e:
+        st.error(f"Erro ao ler arquivo de RF: {e}")
+        return pd.DataFrame()
+
+    df.columns = [str(col).strip().lower() for col in df.columns]
+
+    coluna_data = None
+    coluna_retorno = None
+
+    for col in df.columns:
+        if "data" in col or "mês" in col or "mes" in col:
+            coluna_data = col
+
+        if "retorno" in col or "rentabilidade" in col or "rent" in col:
+            coluna_retorno = col
+
+    if coluna_data is None or coluna_retorno is None:
+        st.error("A planilha precisa ter uma coluna de Data e uma coluna de Retorno/Rentabilidade.")
+        return pd.DataFrame()
+
+    df = df[[coluna_data, coluna_retorno]].copy()
+    df.columns = ["Data", "RF"]
+
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
+    df["RF"] = df["RF"].apply(converter_retorno_percentual)
+
+    df = df.dropna()
+
+    df = df.sort_values("Data")
+
+    df = df.set_index("Data")
+
+    return df
+
+
+def transformar_diario_para_mensal(precos):
+    """
+    Converte preços diários em retornos mensais.
+    """
+    precos_mensais = precos.resample("ME").last()
+    retornos_mensais = precos_mensais.pct_change().dropna()
+
+    return retornos_mensais
+
+
+def calcular_drawdown(serie_retorno):
+    """
+    Calcula drawdown máximo de uma série de retornos.
+    """
+    acumulado = (1 + serie_retorno).cumprod()
+    pico = acumulado.cummax()
+    drawdown = acumulado / pico - 1
+
+    return drawdown.min()
+
+
+def calcular_var_historico(serie_retorno, nivel=0.05):
+    """
+    Calcula VaR histórico.
+    """
+    return serie_retorno.quantile(nivel)
 
 
 def calcular_metricas(retornos):
@@ -445,6 +569,191 @@ st.plotly_chart(fig_perf, use_container_width=True)
 
 
 # =========================
+# MOTOR DE RISCO: RF + DÓLAR + ETFs
+# =========================
+
+st.divider()
+
+st.header("2. Motor de Risco da Carteira")
+
+st.markdown(
+    """
+    Nesta etapa, o app calcula a volatilidade histórica dos principais componentes da carteira:
+
+    - RF offshore;
+    - ETFs internacionais;
+    - Dólar USD/BRL;
+    - ETFs convertidos para BRL.
+    """
+)
+
+# =========================
+# DÓLAR HISTÓRICO
+# =========================
+
+st.subheader("💵 Dólar Histórico")
+
+with st.spinner("Baixando histórico do dólar..."):
+    dados_dolar = baixar_dolar(data_inicio_historico.strftime("%Y-%m-%d"))
+
+if dados_dolar.empty:
+    st.warning("Não foi possível baixar o histórico do dólar via yfinance.")
+    retornos_dolar_mensal = pd.DataFrame()
+else:
+    retornos_dolar_mensal = transformar_diario_para_mensal(dados_dolar)
+    retornos_dolar_mensal.columns = ["Dólar"]
+
+    vol_dolar_anual = retornos_dolar_mensal["Dólar"].std() * np.sqrt(12)
+    retorno_dolar_anual = retornos_dolar_mensal["Dólar"].mean() * 12
+
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        st.metric("Retorno Médio Anual do Dólar", f"{retorno_dolar_anual:.2%}")
+
+    with col_d2:
+        st.metric("Volatilidade Anual do Dólar", f"{vol_dolar_anual:.2%}")
+
+    fig_dolar = go.Figure()
+
+    perf_dolar = (1 + retornos_dolar_mensal["Dólar"]).cumprod() - 1
+
+    fig_dolar.add_trace(
+        go.Scatter(
+            x=perf_dolar.index,
+            y=perf_dolar,
+            mode="lines",
+            name="USD/BRL"
+        )
+    )
+
+    fig_dolar.update_layout(
+        title="Retorno Acumulado do Dólar",
+        xaxis_title="Data",
+        yaxis_title="Retorno Acumulado",
+        yaxis_tickformat=".0%"
+    )
+
+    st.plotly_chart(fig_dolar, use_container_width=True)
+
+
+# =========================
+# UPLOAD DA RF OFFSHORE
+# =========================
+
+st.subheader("🏦 Rentabilidade Histórica da RF Offshore")
+
+arquivo_rf = st.file_uploader(
+    "Faça upload da planilha com a rentabilidade histórica da RF offshore",
+    type=["xlsx", "xls", "csv"]
+)
+
+moeda_rf = st.selectbox(
+    "A rentabilidade da RF está em qual moeda?",
+    ["BRL", "USD"],
+    index=0
+)
+
+rf_historica = tratar_upload_rf(arquivo_rf)
+
+if rf_historica.empty:
+    st.info(
+        """
+        Nenhum histórico de RF foi carregado ainda.
+
+        Para ativar o cálculo completo de risco consolidado, envie uma planilha com:
+
+        - Data
+        - Retorno
+        """
+    )
+else:
+    st.success("Histórico de RF carregado com sucesso.")
+
+    st.dataframe(
+        rf_historica.tail(12).style.format({
+            "RF": "{:.2%}"
+        }),
+        use_container_width=True
+    )
+
+    # Caso a RF esteja em USD, convertemos para BRL usando dólar
+    if moeda_rf == "USD" and not retornos_dolar_mensal.empty:
+        rf_historica = rf_historica.join(retornos_dolar_mensal, how="inner")
+        rf_historica["RF_BRL"] = (1 + rf_historica["RF"]) * (1 + rf_historica["Dólar"]) - 1
+        serie_rf_final = rf_historica["RF_BRL"].rename("RF")
+    else:
+        serie_rf_final = rf_historica["RF"].rename("RF")
+
+    vol_rf_anual = serie_rf_final.std() * np.sqrt(12)
+    retorno_rf_anual = serie_rf_final.mean() * 12
+    drawdown_rf = calcular_drawdown(serie_rf_final)
+    var_rf = calcular_var_historico(serie_rf_final)
+
+    col_rf1, col_rf2, col_rf3, col_rf4 = st.columns(4)
+
+    with col_rf1:
+        st.metric("Retorno Médio Anual RF", f"{retorno_rf_anual:.2%}")
+
+    with col_rf2:
+        st.metric("Volatilidade Anual RF", f"{vol_rf_anual:.2%}")
+
+    with col_rf3:
+        st.metric("Drawdown Máximo RF", f"{drawdown_rf:.2%}")
+
+    with col_rf4:
+        st.metric("VaR Mensal 95% RF", f"{var_rf:.2%}")
+
+
+# =========================
+# ETFs EM BASE MENSAL E EM BRL
+# =========================
+
+st.subheader("🌎 ETFs em USD e Convertidos para BRL")
+
+retornos_etfs_mensal_usd = transformar_diario_para_mensal(dados_etfs)
+
+# Carteira de ETFs igualmente ponderada por enquanto
+retorno_etf_usd = retornos_etfs_mensal_usd.mean(axis=1).rename("ETFs_USD")
+
+if not retornos_dolar_mensal.empty:
+    base_etf_brl = pd.concat(
+        [retorno_etf_usd, retornos_dolar_mensal["Dólar"]],
+        axis=1
+    ).dropna()
+
+    base_etf_brl["ETFs_BRL"] = (
+        (1 + base_etf_brl["ETFs_USD"]) *
+        (1 + base_etf_brl["Dólar"]) - 1
+    )
+
+    serie_etf_brl = base_etf_brl["ETFs_BRL"]
+
+    vol_etf_usd_anual = retorno_etf_usd.std() * np.sqrt(12)
+    vol_etf_brl_anual = serie_etf_brl.std() * np.sqrt(12)
+
+    retorno_etf_usd_anual = retorno_etf_usd.mean() * 12
+    retorno_etf_brl_anual = serie_etf_brl.mean() * 12
+
+    col_etf1, col_etf2, col_etf3, col_etf4 = st.columns(4)
+
+    with col_etf1:
+        st.metric("Retorno Anual ETFs USD", f"{retorno_etf_usd_anual:.2%}")
+
+    with col_etf2:
+        st.metric("Vol Anual ETFs USD", f"{vol_etf_usd_anual:.2%}")
+
+    with col_etf3:
+        st.metric("Retorno Anual ETFs BRL", f"{retorno_etf_brl_anual:.2%}")
+
+    with col_etf4:
+        st.metric("Vol Anual ETFs BRL", f"{vol_etf_brl_anual:.2%}")
+
+else:
+    serie_etf_brl = pd.Series(dtype=float)
+    st.warning("Sem dólar histórico, não foi possível converter ETFs para BRL.")       
+
+# =========================
 # GLIDE PATH FINANCEIRO
 # =========================
 
@@ -591,6 +900,141 @@ st.dataframe(
     use_container_width=True
 )
 
+# =========================
+# VOLATILIDADE CONSOLIDADA DA CARTEIRA
+# =========================
+
+st.subheader("📊 Volatilidade Consolidada da Carteira")
+
+if not rf_historica.empty and not serie_etf_brl.empty:
+
+    base_risco = pd.concat(
+        [
+            serie_rf_final.rename("RF"),
+            serie_etf_brl.rename("ETFs_BRL")
+        ],
+        axis=1
+    ).dropna()
+
+    if len(base_risco) < 6:
+        st.warning("Ainda há poucos dados em comum para calcular a volatilidade consolidada.")
+    else:
+        matriz_correlacao = base_risco.corr()
+        matriz_cov = base_risco.cov() * 12
+
+        pesos_carteira_final = np.array([
+            meta_rf / 100,
+            meta_rv / 100
+        ])
+
+        vol_carteira_final = np.sqrt(
+            np.dot(
+                pesos_carteira_final.T,
+                np.dot(matriz_cov.values, pesos_carteira_final)
+            )
+        )
+
+        retorno_esperado_final = (
+            pesos_carteira_final[0] * base_risco["RF"].mean() * 12 +
+            pesos_carteira_final[1] * base_risco["ETFs_BRL"].mean() * 12
+        )
+
+        sharpe_simples = retorno_esperado_final / vol_carteira_final if vol_carteira_final != 0 else np.nan
+
+        col_v1, col_v2, col_v3 = st.columns(3)
+
+        with col_v1:
+            st.metric("Retorno Esperado Carteira 80/20", f"{retorno_esperado_final:.2%}")
+
+        with col_v2:
+            st.metric("Volatilidade Carteira 80/20", f"{vol_carteira_final:.2%}")
+
+        with col_v3:
+            st.metric("Sharpe Simples", f"{sharpe_simples:.2f}")
+
+        st.markdown("### Correlação RF x ETFs em BRL")
+
+        fig_corr_consolidada = px.imshow(
+            matriz_correlacao,
+            text_auto=".2f",
+            aspect="auto",
+            title="Matriz de Correlação Consolidada"
+        )
+
+        st.plotly_chart(fig_corr_consolidada, use_container_width=True)
+
+        # =========================
+        # EVOLUÇÃO DA VOLATILIDADE PELO GLIDE PATH
+        # =========================
+
+        st.markdown("### Evolução da Volatilidade Projetada pelo Glide Path")
+
+        historico_mensal_df["Volatilidade Projetada"] = np.nan
+
+        for idx, linha in historico_mensal_df.iterrows():
+
+            peso_rv = linha["% ETFs"]
+            peso_rf = linha["% RF"]
+
+            pesos_dinamicos = np.array([peso_rf, peso_rv])
+
+            vol_dinamica = np.sqrt(
+                np.dot(
+                    pesos_dinamicos.T,
+                    np.dot(matriz_cov.values, pesos_dinamicos)
+                )
+            )
+
+            historico_mensal_df.loc[idx, "Volatilidade Projetada"] = vol_dinamica
+
+        fig_vol = go.Figure()
+
+        fig_vol.add_trace(
+            go.Scatter(
+                x=historico_mensal_df["Data"],
+                y=historico_mensal_df["Volatilidade Projetada"] * 100,
+                mode="lines+markers",
+                name="Volatilidade Projetada"
+            )
+        )
+
+        fig_vol.update_layout(
+            title="Evolução da Volatilidade Anualizada Projetada",
+            xaxis_title="Data",
+            yaxis_title="Volatilidade Anualizada (%)"
+        )
+
+        st.plotly_chart(fig_vol, use_container_width=True)
+
+        st.dataframe(
+            historico_mensal_df[
+                [
+                    "Data",
+                    "% ETFs",
+                    "% RF",
+                    "Volatilidade Projetada"
+                ]
+            ].style.format({
+                "% ETFs": "{:.2%}",
+                "% RF": "{:.2%}",
+                "Volatilidade Projetada": "{:.2%}"
+            }),
+            use_container_width=True
+        )
+
+else:
+    st.info(
+        """
+        Para calcular a volatilidade consolidada, envie a rentabilidade histórica da RF offshore.
+
+        O app já consegue calcular:
+        - Volatilidade dos ETFs;
+        - Volatilidade do dólar;
+        - ETFs convertidos para BRL.
+
+        Mas a carteira consolidada precisa da série histórica da RF.
+        """
+    )
 
 # =========================
 # GRÁFICO DE APORTES
