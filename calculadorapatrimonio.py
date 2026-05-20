@@ -514,8 +514,6 @@ patrimonio_inicial_txt = st.sidebar.text_input(
 
 patrimonio_inicial = moeda_para_float(patrimonio_inicial_txt)
 
-st.sidebar.subheader("Horizonte")
-
 data_final = st.sidebar.date_input(
     "Data final",
     value=date(2028, 9, 30)
@@ -529,8 +527,6 @@ meses = calcular_meses(hoje, data_final)
 
 st.sidebar.write(f"Meses até a meta: **{meses}**")
 
-st.sidebar.subheader("Meta")
-
 meta_etfs = st.sidebar.slider(
     "Meta final em ETFs (%)",
     min_value=0,
@@ -542,8 +538,6 @@ meta_etfs = st.sidebar.slider(
 meta_renda_fixa = 100 - meta_etfs
 
 st.sidebar.write(f"Meta em Renda Fixa: **{meta_renda_fixa}%**")
-
-st.sidebar.subheader("Aportes")
 
 aporte_2026_txt = st.sidebar.text_input(
     "Aporte mensal em 2026",
@@ -579,7 +573,7 @@ referencia_renda_fixa = st.sidebar.selectbox(
 )
 
 st.sidebar.caption(
-    "Essa referência é usada apenas para estimar risco e retorno histórico da parcela conservadora internacional."
+    "Essa referência é usada apenas para estimar risco e retorno histórico."
 )
 
 st.sidebar.subheader("ETFs")
