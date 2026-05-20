@@ -312,7 +312,7 @@ def calcular_stress(peso_rf, peso_etf, cenarios):
 # TÍTULO
 # =========================
 
-st.title("📊 M Wealth - Simulador Quantitativo Internacional")
+st.title("M Wealth - Simulador Quantitativo")
 
 st.markdown(
     """
@@ -337,9 +337,7 @@ patrimonio_inicial = st.sidebar.number_input(
     min_value=0.0
 )
 
-st.sidebar.subheader("📅 Horizonte")
-
-st.sidebar.info(f"Data inicial automática: {hoje.strftime('%d/%m/%Y')}")
+st.sidebar.subheader("Horizonte")
 
 data_final = st.sidebar.date_input(
     "Data Final",
@@ -410,34 +408,21 @@ st.sidebar.caption(
     "SHY = Treasury curto | IEF = Treasury intermediário | TLT = Treasury longo | SGOV/BIL = T-Bills"
 )
 
-st.sidebar.subheader("🌎 ETFs")
-
-lista_base_etfs = [
-    "NOBL", "VOO", "IVV", "SPY", "SCHD", "QUAL", "VXUS", "VEA",
-    "VWO", "QQQ", "GLD", "IAU", "VTI", "ACWI", "DGRO"
-]
-
-etfs_selecionados = st.sidebar.multiselect(
-    "Selecione ETFs da lista",
-    lista_base_etfs,
-    default=["NOBL"]
-)
+st.sidebar.subheader("ETFs")
 
 etfs_manuais = st.sidebar.text_input(
-    "Inserir ETFs manualmente",
-    placeholder="Ex: VTI, ACWI, DGRO"
+    "ETFs da carteira",
+    value="NOBL",
+    placeholder="Ex: NOBL, VOO, SCHD, ACWI"
 )
 
-lista_etfs_manuais = []
+etfs = [
+    ticker.strip().upper()
+    for ticker in etfs_manuais.replace(";", ",").split(",")
+    if ticker.strip() != ""
+]
 
-if etfs_manuais:
-    lista_etfs_manuais = [
-        ticker.strip().upper()
-        for ticker in etfs_manuais.replace(";", ",").split(",")
-        if ticker.strip() != ""
-    ]
-
-etfs = list(dict.fromkeys(etfs_selecionados + lista_etfs_manuais))
+etfs = list(dict.fromkeys(etfs))
 
 st.sidebar.subheader("📊 Histórico")
 
@@ -561,6 +546,29 @@ sharpe_simples = retorno_final / vol_final if vol_final != 0 else np.nan
 
 
 # =========================
+# EVOLUÇÃO DA VOLATILIDADE PELO GLIDE PATH
+# =========================
+
+historico_mensal_df["Volatilidade Projetada"] = np.nan
+
+for idx, linha in historico_mensal_df.iterrows():
+
+    peso_rf = linha["% RF"]
+    peso_etf = linha["% ETFs"]
+
+    pesos_dinamicos = np.array([peso_rf, peso_etf])
+
+    vol_dinamica = np.sqrt(
+        np.dot(
+            pesos_dinamicos.T,
+            np.dot(matriz_cov_anual.values, pesos_dinamicos)
+        )
+    )
+
+    historico_mensal_df.loc[idx, "Volatilidade Projetada"] = vol_dinamica
+
+
+# =========================
 # CENÁRIOS
 # =========================
 
@@ -648,26 +656,29 @@ stress_df = calcular_stress(
 # ABAS
 # =========================
 
-aba_resumo, aba_plano, aba_ativos, aba_cenarios, aba_montecarlo, aba_stress, aba_avancado = st.tabs(
+aba_resumo, aba_ativos, aba_simulacoes, aba_avancado = st.tabs(
     [
-        "Resumo Executivo",
-        "Plano de Aportes",
+        "Resumo e Plano",
         "Ativos e Risco",
-        "Cenários",
-        "Monte Carlo",
-        "Stress Test",
+        "Cenários e Simulações",
         "Avançado"
     ]
 )
 
-
 # =========================
-# ABA 1 — RESUMO
+# ABA 1 — RESUMO E PLANO
 # =========================
 
 with aba_resumo:
 
-    st.header("Resumo Executivo")
+    st.header("Resumo Executivo e Plano de Aportes")
+
+    st.markdown(
+        """
+        Esta aba mostra a trajetória necessária para que a carteira alcance a alocação-alvo
+        dentro do prazo definido, considerando os aportes mensais informados.
+        """
+    )
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -692,7 +703,7 @@ with aba_resumo:
         st.metric("Aporte Médio em RF", formatar_moeda(resumo["aporte_mensal_medio_rf"]))
 
     with col7:
-        st.metric(f"Vol Carteira {meta_rf}/{meta_rv}", f"{vol_final:.2%}")
+        st.metric(f"Vol Final {meta_rf}/{meta_rv}", f"{vol_final:.2%}")
 
     with col8:
         st.metric("Sharpe Simples", f"{sharpe_simples:.2f}")
@@ -725,14 +736,35 @@ with aba_resumo:
 
     st.plotly_chart(fig_glide, use_container_width=True)
 
+    st.subheader("Evolução da Volatilidade da Carteira")
 
-# =========================
-# ABA 2 — PLANO
-# =========================
+    st.markdown(
+        """
+        A volatilidade projetada considera a mudança gradual dos pesos entre RF e ETFs
+        ao longo do tempo, usando o histórico do proxy de RF e da carteira de ETFs em BRL.
+        """
+    )
 
-with aba_plano:
+    fig_vol = go.Figure()
 
-    st.header("Plano Mensal de Aportes")
+    fig_vol.add_trace(
+        go.Scatter(
+            x=historico_mensal_df["Data"],
+            y=historico_mensal_df["Volatilidade Projetada"] * 100,
+            mode="lines+markers",
+            name="Volatilidade Projetada"
+        )
+    )
+
+    fig_vol.update_layout(
+        title="Volatilidade Anualizada Projetada pelo Glide Path",
+        xaxis_title="Data",
+        yaxis_title="Volatilidade Anualizada (%)"
+    )
+
+    st.plotly_chart(fig_vol, use_container_width=True)
+
+    st.subheader("Plano Mensal de Aportes")
 
     st.dataframe(
         historico_mensal_df.style.format({
@@ -743,10 +775,13 @@ with aba_plano:
             "Saldo RF": "R$ {:,.2f}",
             "Patrimônio Total": "R$ {:,.2f}",
             "% ETFs": "{:.2%}",
-            "% RF": "{:.2%}"
+            "% RF": "{:.2%}",
+            "Volatilidade Projetada": "{:.2%}"
         }),
         use_container_width=True
     )
+
+    st.subheader("Distribuição Mensal dos Aportes")
 
     fig_aportes = go.Figure()
 
@@ -768,7 +803,7 @@ with aba_plano:
 
     fig_aportes.update_layout(
         barmode="stack",
-        title="Distribuição Mensal dos Aportes",
+        title="Aportes Mensais por Classe",
         xaxis_title="Data",
         yaxis_title="Valor"
     )
@@ -777,7 +812,7 @@ with aba_plano:
 
 
 # =========================
-# ABA 3 — ATIVOS E RISCO
+# ABA 2 — ATIVOS E RISCO
 # =========================
 
 with aba_ativos:
@@ -853,12 +888,34 @@ with aba_ativos:
 
 
 # =========================
-# ABA 4 — CENÁRIOS
+# ABA 3 — CENÁRIOS E SIMULAÇÕES
 # =========================
 
-with aba_cenarios:
+with aba_simulacoes:
 
-    st.header("Cenários Patrimoniais")
+    st.header("Cenários e Simulações")
+
+    st.markdown(
+        """
+        Esta aba concentra as análises prospectivas da carteira.  
+        O objetivo é visualizar diferentes possibilidades de evolução patrimonial,
+        desde cenários determinísticos até simulações probabilísticas e choques de mercado.
+        """
+    )
+
+    # =========================
+    # CENÁRIOS
+    # =========================
+
+    st.subheader("1. Cenários Patrimoniais")
+
+    st.markdown(
+        """
+        Os cenários patrimoniais usam hipóteses anuais de retorno para RF e ETFs.
+        Eles ajudam a visualizar uma trajetória conservadora, uma trajetória base
+        e uma trajetória otimista até a data final do estudo.
+        """
+    )
 
     st.dataframe(
         cenarios_df.style.format({
@@ -907,19 +964,21 @@ with aba_cenarios:
 
     st.plotly_chart(fig_cenarios, use_container_width=True)
 
+    st.divider()
 
-# =========================
-# ABA 5 — MONTE CARLO
-# =========================
+    # =========================
+    # MONTE CARLO
+    # =========================
 
-with aba_montecarlo:
-
-    st.header("Monte Carlo")
+    st.subheader("2. Monte Carlo")
 
     st.markdown(
         """
-        Simulação baseada na média, volatilidade e covariância histórica mensal
-        entre o proxy de RF e a carteira de ETFs, ambos convertidos para BRL.
+        O Monte Carlo simula milhares de trajetórias possíveis para o patrimônio,
+        usando a média, volatilidade e covariância histórica mensal entre o proxy de RF
+        e a carteira de ETFs, ambos convertidos para BRL.
+
+        O resultado mostra uma faixa probabilística de patrimônio futuro.
         """
     )
 
@@ -936,50 +995,15 @@ with aba_montecarlo:
 
     fig_mc = go.Figure()
 
-    fig_mc.add_trace(
-        go.Scatter(
-            x=percentis_mc.index,
-            y=percentis_mc["P95"],
-            mode="lines",
-            name="P95"
+    for coluna in ["P95", "P75", "P50", "P25", "P5"]:
+        fig_mc.add_trace(
+            go.Scatter(
+                x=percentis_mc.index,
+                y=percentis_mc[coluna],
+                mode="lines",
+                name=coluna
+            )
         )
-    )
-
-    fig_mc.add_trace(
-        go.Scatter(
-            x=percentis_mc.index,
-            y=percentis_mc["P75"],
-            mode="lines",
-            name="P75"
-        )
-    )
-
-    fig_mc.add_trace(
-        go.Scatter(
-            x=percentis_mc.index,
-            y=percentis_mc["P50"],
-            mode="lines",
-            name="P50"
-        )
-    )
-
-    fig_mc.add_trace(
-        go.Scatter(
-            x=percentis_mc.index,
-            y=percentis_mc["P25"],
-            mode="lines",
-            name="P25"
-        )
-    )
-
-    fig_mc.add_trace(
-        go.Scatter(
-            x=percentis_mc.index,
-            y=percentis_mc["P5"],
-            mode="lines",
-            name="P5"
-        )
-    )
 
     fig_mc.update_layout(
         title="Cone Probabilístico — Monte Carlo",
@@ -994,19 +1018,24 @@ with aba_montecarlo:
         use_container_width=True
     )
 
+    st.divider()
 
-# =========================
-# ABA 6 — STRESS TEST
-# =========================
+    # =========================
+    # STRESS TEST
+    # =========================
 
-with aba_stress:
-
-    st.header("Stress Test")
+    st.subheader("3. Stress Test")
 
     st.markdown(
         """
-        Os cenários abaixo aplicam choques simultâneos em RF USD, ETFs USD e dólar.
-        O impacto final é convertido para BRL e ponderado pela alocação alvo da carteira.
+        O stress test aplica choques simultâneos em três componentes:
+
+        - RF em dólar;
+        - ETFs em dólar;
+        - câmbio USD/BRL.
+
+        A análise mostra como a carteira alvo reagiria em cenários extremos,
+        já convertidos para BRL.
         """
     )
 
@@ -1044,6 +1073,14 @@ with aba_stress:
 with aba_avancado:
 
     st.header("Avançado")
+
+    st.markdown(
+        """
+        Esta aba concentra as bases técnicas usadas nos cálculos.
+        Ela não precisa ser usada em reunião, mas ajuda na validação do modelo,
+        auditoria dos dados e conferência das premissas quantitativas.
+        """
+    )
 
     st.subheader("Base de risco mensal")
 
