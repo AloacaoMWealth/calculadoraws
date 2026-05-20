@@ -326,12 +326,12 @@ st.markdown(
 # SIDEBAR
 # =========================
 
-st.sidebar.header("⚙️ Configurações")
+st.sidebar.header("Configurações")
 
 hoje = date.today()
 
 patrimonio_inicial = st.sidebar.number_input(
-    "Patrimônio Inicial (R$)",
+    "Patrimônio Inicial",
     value=4098000.0,
     step=100000.0,
     min_value=0.0
@@ -352,7 +352,7 @@ meses = calcular_meses(hoje, data_final)
 
 st.sidebar.write(f"Meses até a meta: **{meses}**")
 
-st.sidebar.subheader("🎯 Meta")
+st.sidebar.subheader("Meta")
 
 meta_rv = st.sidebar.slider(
     "Meta Final em ETFs (%)",
@@ -366,7 +366,7 @@ meta_rf = 100 - meta_rv
 
 st.sidebar.write(f"Meta RF: **{meta_rf}%**")
 
-st.sidebar.subheader("💰 Aportes")
+st.sidebar.subheader("Aportes")
 
 aporte_2026 = st.sidebar.number_input(
     "Aporte Mensal 2026",
@@ -396,7 +396,7 @@ aporte_padrao = st.sidebar.number_input(
     min_value=0.0
 )
 
-st.sidebar.subheader("🏦 Proxy de RF Offshore")
+st.sidebar.subheader("Proxy de RF Offshore")
 
 rf_proxy = st.sidebar.selectbox(
     "ETF usado como proxy da RF",
@@ -424,7 +424,7 @@ etfs = [
 
 etfs = list(dict.fromkeys(etfs))
 
-st.sidebar.subheader("📊 Histórico")
+st.sidebar.subheader("Histórico")
 
 anos_historico = st.sidebar.slider(
     "Anos de histórico",
