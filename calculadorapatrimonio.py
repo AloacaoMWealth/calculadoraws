@@ -17,51 +17,62 @@ from datetime import date, timedelta
 # =========================
 
 st.set_page_config(
-    page_title="M Wealth - Simulador Quantitativo",
+    page_title="M Wealth - Simulador Patrimonial Internacional",
     layout="wide"
 )
+
 
 # =========================
 # IDENTIDADE VISUAL
 # =========================
 
 COR_PRINCIPAL = "#131925"
+COR_SIDEBAR = "#0E131D"
+COR_CARD = "#1C2433"
+COR_INPUT = "#0B1018"
+COR_TEXTO = "#FFFFFF"
+COR_TEXTO_SECUNDARIO = "#D8DCE3"
+COR_DESTAQUE = "#7895E8"
 
 st.markdown(
     f"""
     <style>
         .stApp {{
             background-color: {COR_PRINCIPAL};
-            color: #FFFFFF;
+            color: {COR_TEXTO};
         }}
 
         section[data-testid="stSidebar"] {{
-            background-color: #0E131D;
+            background-color: {COR_SIDEBAR};
         }}
 
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] p,
         section[data-testid="stSidebar"] span {{
-            color: #FFFFFF !important;
+            color: {COR_TEXTO} !important;
         }}
 
         h1, h2, h3, h4 {{
-            color: #FFFFFF;
+            color: {COR_TEXTO};
+        }}
+
+        p, li, span {{
+            color: {COR_TEXTO};
         }}
 
         .stMetric {{
-            background-color: #1C2433;
+            background-color: {COR_CARD};
             padding: 16px;
             border-radius: 14px;
             border: 1px solid rgba(255,255,255,0.08);
         }}
 
         div[data-testid="stMetricValue"] {{
-            color: #FFFFFF;
+            color: {COR_TEXTO};
         }}
 
         div[data-testid="stMetricLabel"] {{
-            color: #D8DCE3;
+            color: {COR_TEXTO_SECUNDARIO};
         }}
 
         .stDataFrame {{
@@ -69,47 +80,86 @@ st.markdown(
         }}
 
         div[data-testid="stTabs"] button {{
-            color: #FFFFFF;
+            color: {COR_TEXTO};
         }}
 
         div[data-testid="stTabs"] button[aria-selected="true"] {{
-            border-bottom: 3px solid #FFFFFF;
+            border-bottom: 3px solid {COR_DESTAQUE};
+        }}
+
+        input, textarea {{
+            background-color: {COR_INPUT} !important;
+            color: {COR_TEXTO} !important;
+            border-radius: 10px !important;
+            border: 1px solid rgba(255,255,255,0.08) !important;
+        }}
+
+        div[data-baseweb="select"] > div {{
+            background-color: {COR_INPUT} !important;
+            color: {COR_TEXTO} !important;
+            border-radius: 10px !important;
+        }}
+
+        .stSlider > div > div > div {{
+            color: {COR_TEXTO} !important;
+        }}
+
+        div[data-testid="stExpander"] {{
+            background-color: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
         }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# =========================
-# CABEÇALHO
-# =========================
-
-col_logo, col_titulo = st.columns([1, 5])
-
-with col_logo:
-    st.image("Logo-M-Wealth.png", width=250)
-
-with col_titulo:
-    st.title("Simulador Patrimonial Internacional")
-    st.markdown(
-        """
-        Ferramenta para planejar, de forma gradual e controlada, a exposição internacional em ETFs.
-        """
-    )
-
 
 # =========================
 # FUNÇÕES AUXILIARES
 # =========================
 
+def moeda_para_float(valor):
+    """
+    Converte texto em padrão brasileiro para float.
+    Ex: R$ 4.098.000,00 -> 4098000.00
+    """
+    if isinstance(valor, (int, float)):
+        return float(valor)
+
+    valor = str(valor)
+    valor = valor.replace("R$", "")
+    valor = valor.replace(" ", "")
+    valor = valor.replace(".", "")
+    valor = valor.replace(",", ".")
+
+    try:
+        return float(valor)
+    except Exception:
+        return 0.0
+
+
 def formatar_moeda(valor):
+    """
+    Converte número para padrão brasileiro.
+    """
     try:
         return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except Exception:
         return valor
 
 
+def formatar_data_br(valor):
+    """
+    Formata datas sem hora para padrão brasileiro.
+    """
+    return pd.to_datetime(valor).strftime("%d/%m/%Y")
+
+
 def calcular_meses(data_inicial, data_final):
+    """
+    Calcula quantidade de meses entre duas datas.
+    """
     meses = (data_final.year - data_inicial.year) * 12 + (data_final.month - data_inicial.month)
 
     if data_final.day >= data_inicial.day:
@@ -120,6 +170,9 @@ def calcular_meses(data_inicial, data_final):
 
 @st.cache_data(show_spinner=False)
 def baixar_precos(tickers, inicio):
+    """
+    Baixa preços ajustados via Yahoo Finance.
+    """
     if isinstance(tickers, str):
         tickers = [tickers]
 
@@ -159,12 +212,18 @@ def baixar_precos(tickers, inicio):
 
 
 def transformar_diario_para_mensal(precos):
+    """
+    Converte preços diários para retornos mensais.
+    """
     precos_mensais = precos.resample("ME").last()
     retornos_mensais = precos_mensais.pct_change().dropna()
     return retornos_mensais
 
 
 def calcular_metricas_mensais(serie):
+    """
+    Calcula retorno anualizado, oscilação anualizada, maior queda e perda mensal estimada.
+    """
     retorno_anual = serie.mean() * 12
     vol_anual = serie.std() * np.sqrt(12)
 
@@ -179,6 +238,9 @@ def calcular_metricas_mensais(serie):
 
 
 def gerar_fluxo_mensal(data_inicial, data_final, aporte_2026, aporte_2027, aporte_2028, aporte_padrao):
+    """
+    Gera tabela mensal de aportes por ano.
+    """
     datas = pd.date_range(start=data_inicial, end=data_final, freq="ME")
 
     if len(datas) == 0:
@@ -207,29 +269,33 @@ def gerar_fluxo_mensal(data_inicial, data_final, aporte_2026, aporte_2027, aport
     return pd.DataFrame(fluxo)
 
 
-def calcular_glide_path(
+def calcular_plano_evolucao(
     patrimonio_inicial,
     fluxo_df,
-    meta_rv,
+    meta_etfs,
     meses
 ):
+    """
+    Calcula o plano mensal necessário para alcançar a meta de ETFs.
+    Assume patrimônio inicial 100% em Renda Fixa Internacional.
+    """
     total_aportes = fluxo_df["Aporte Mensal"].sum()
     patrimonio_final_sem_rentabilidade = patrimonio_inicial + total_aportes
 
-    meta_rv_financeira = patrimonio_final_sem_rentabilidade * (meta_rv / 100)
-    meta_rf_financeira = patrimonio_final_sem_rentabilidade * (1 - meta_rv / 100)
+    meta_etfs_financeira = patrimonio_final_sem_rentabilidade * (meta_etfs / 100)
+    meta_renda_fixa_financeira = patrimonio_final_sem_rentabilidade * (1 - meta_etfs / 100)
 
-    rv_atual = 0.0
-    rf_atual = patrimonio_inicial
+    etfs_atual = 0.0
+    renda_fixa_atual = patrimonio_inicial
 
-    necessidade_total_etfs = max(meta_rv_financeira - rv_atual, 0)
+    necessidade_total_etfs = max(meta_etfs_financeira - etfs_atual, 0)
     aporte_mensal_medio_etfs = necessidade_total_etfs / meses
 
     aporte_mensal_medio_total = total_aportes / meses
-    aporte_mensal_medio_rf = max(aporte_mensal_medio_total - aporte_mensal_medio_etfs, 0)
+    aporte_mensal_medio_renda_fixa = max(aporte_mensal_medio_total - aporte_mensal_medio_etfs, 0)
 
-    rv_acumulada = rv_atual
-    rf_acumulada = rf_atual
+    etfs_acumulado = etfs_atual
+    renda_fixa_acumulada = renda_fixa_atual
 
     historico = []
 
@@ -237,7 +303,7 @@ def calcular_glide_path(
         data_ref = linha["Data"]
         aporte_mensal = linha["Aporte Mensal"]
 
-        saldo_restante_etfs = max(meta_rv_financeira - rv_acumulada, 0)
+        saldo_restante_etfs = max(meta_etfs_financeira - etfs_acumulado, 0)
 
         aporte_etfs = min(
             aporte_mensal,
@@ -245,27 +311,27 @@ def calcular_glide_path(
             saldo_restante_etfs
         )
 
-        aporte_rf = aporte_mensal - aporte_etfs
+        aporte_renda_fixa = aporte_mensal - aporte_etfs
 
-        rv_acumulada += aporte_etfs
-        rf_acumulada += aporte_rf
+        etfs_acumulado += aporte_etfs
+        renda_fixa_acumulada += aporte_renda_fixa
 
-        patrimonio_total = rv_acumulada + rf_acumulada
+        patrimonio_total = etfs_acumulado + renda_fixa_acumulada
 
-        percentual_rv = rv_acumulada / patrimonio_total if patrimonio_total > 0 else 0
-        percentual_rf = rf_acumulada / patrimonio_total if patrimonio_total > 0 else 0
+        percentual_etfs = etfs_acumulado / patrimonio_total if patrimonio_total > 0 else 0
+        percentual_renda_fixa = renda_fixa_acumulada / patrimonio_total if patrimonio_total > 0 else 0
 
         historico.append({
             "Data": data_ref,
             "Ano": data_ref.year,
             "Aporte Total": aporte_mensal,
             "Aporte em ETFs": aporte_etfs,
-            "Aporte em RF": aporte_rf,
-            "Saldo ETFs": rv_acumulada,
-            "Saldo RF": rf_acumulada,
+            "Aporte em Renda Fixa": aporte_renda_fixa,
+            "Saldo em ETFs": etfs_acumulado,
+            "Saldo em Renda Fixa": renda_fixa_acumulada,
             "Patrimônio Total": patrimonio_total,
-            "% ETFs": percentual_rv,
-            "% RF": percentual_rf
+            "% ETFs": percentual_etfs,
+            "% Renda Fixa": percentual_renda_fixa
         })
 
     historico_df = pd.DataFrame(historico)
@@ -273,77 +339,88 @@ def calcular_glide_path(
     resumo = {
         "total_aportes": total_aportes,
         "patrimonio_final_sem_rentabilidade": patrimonio_final_sem_rentabilidade,
-        "meta_rv_financeira": meta_rv_financeira,
-        "meta_rf_financeira": meta_rf_financeira,
+        "meta_etfs_financeira": meta_etfs_financeira,
+        "meta_renda_fixa_financeira": meta_renda_fixa_financeira,
         "aporte_mensal_medio_etfs": aporte_mensal_medio_etfs,
-        "aporte_mensal_medio_rf": aporte_mensal_medio_rf
+        "aporte_mensal_medio_renda_fixa": aporte_mensal_medio_renda_fixa
     }
 
     return historico_df, resumo
 
 
-def simular_cenario(historico_df, retorno_rf_aa, retorno_etf_aa):
-    rf_mensal = (1 + retorno_rf_aa) ** (1 / 12) - 1
-    etf_mensal = (1 + retorno_etf_aa) ** (1 / 12) - 1
+def simular_cenario(historico_df, retorno_renda_fixa_aa, retorno_etfs_aa):
+    """
+    Simula evolução patrimonial com retornos anuais determinísticos.
+    """
+    renda_fixa_mensal = (1 + retorno_renda_fixa_aa) ** (1 / 12) - 1
+    etfs_mensal = (1 + retorno_etfs_aa) ** (1 / 12) - 1
 
-    saldo_rf = 0
-    saldo_etf = 0
+    saldo_renda_fixa = 0
+    saldo_etfs = 0
 
-    # Como o patrimônio inicial já está em RF
     if len(historico_df) > 0:
-        saldo_rf = historico_df.iloc[0]["Saldo RF"] - historico_df.iloc[0]["Aporte em RF"]
-        saldo_etf = 0
+        saldo_renda_fixa = (
+            historico_df.iloc[0]["Saldo em Renda Fixa"] -
+            historico_df.iloc[0]["Aporte em Renda Fixa"]
+        )
+        saldo_etfs = 0
 
     serie = []
 
     for _, linha in historico_df.iterrows():
-        saldo_rf += linha["Aporte em RF"]
-        saldo_etf += linha["Aporte em ETFs"]
+        saldo_renda_fixa += linha["Aporte em Renda Fixa"]
+        saldo_etfs += linha["Aporte em ETFs"]
 
-        saldo_rf *= (1 + rf_mensal)
-        saldo_etf *= (1 + etf_mensal)
+        saldo_renda_fixa *= (1 + renda_fixa_mensal)
+        saldo_etfs *= (1 + etfs_mensal)
 
-        patrimonio = saldo_rf + saldo_etf
+        patrimonio = saldo_renda_fixa + saldo_etfs
 
         serie.append({
             "Data": linha["Data"],
-            "RF": saldo_rf,
-            "ETFs": saldo_etf,
+            "Renda Fixa": saldo_renda_fixa,
+            "ETFs": saldo_etfs,
             "Patrimônio": patrimonio,
-            "% ETFs": saldo_etf / patrimonio if patrimonio > 0 else 0
+            "% ETFs": saldo_etfs / patrimonio if patrimonio > 0 else 0
         })
 
     return pd.DataFrame(serie)
 
 
-def rodar_monte_carlo(historico_df, media_mensal, cov_mensal, n_simulacoes=1000):
+def rodar_simulacao_probabilistica(historico_df, media_mensal, cov_mensal, n_simulacoes=1000):
+    """
+    Roda simulação probabilística usando média e matriz de covariância mensal.
+    """
     resultados = []
 
-    for sim in range(n_simulacoes):
-        saldo_rf = 0
-        saldo_etf = 0
+    for _ in range(n_simulacoes):
+        saldo_renda_fixa = 0
+        saldo_etfs = 0
 
         if len(historico_df) > 0:
-            saldo_rf = historico_df.iloc[0]["Saldo RF"] - historico_df.iloc[0]["Aporte em RF"]
+            saldo_renda_fixa = (
+                historico_df.iloc[0]["Saldo em Renda Fixa"] -
+                historico_df.iloc[0]["Aporte em Renda Fixa"]
+            )
 
         patrimonio_path = []
 
         for _, linha in historico_df.iterrows():
-            saldo_rf += linha["Aporte em RF"]
-            saldo_etf += linha["Aporte em ETFs"]
+            saldo_renda_fixa += linha["Aporte em Renda Fixa"]
+            saldo_etfs += linha["Aporte em ETFs"]
 
             retornos_simulados = np.random.multivariate_normal(
                 mean=media_mensal,
                 cov=cov_mensal
             )
 
-            retorno_rf = retornos_simulados[0]
-            retorno_etf = retornos_simulados[1]
+            retorno_renda_fixa = retornos_simulados[0]
+            retorno_etfs = retornos_simulados[1]
 
-            saldo_rf *= (1 + retorno_rf)
-            saldo_etf *= (1 + retorno_etf)
+            saldo_renda_fixa *= (1 + retorno_renda_fixa)
+            saldo_etfs *= (1 + retorno_etfs)
 
-            patrimonio = saldo_rf + saldo_etf
+            patrimonio = saldo_renda_fixa + saldo_etfs
             patrimonio_path.append(patrimonio)
 
         resultados.append(patrimonio_path)
@@ -352,50 +429,74 @@ def rodar_monte_carlo(historico_df, media_mensal, cov_mensal, n_simulacoes=1000)
     resultados_df.index = historico_df["Data"].values
 
     percentis = pd.DataFrame({
-        "P5": resultados_df.quantile(0.05, axis=1),
-        "P25": resultados_df.quantile(0.25, axis=1),
-        "P50": resultados_df.quantile(0.50, axis=1),
-        "P75": resultados_df.quantile(0.75, axis=1),
-        "P95": resultados_df.quantile(0.95, axis=1),
+        "Cenário pessimista": resultados_df.quantile(0.05, axis=1),
+        "Faixa inferior": resultados_df.quantile(0.25, axis=1),
+        "Cenário central": resultados_df.quantile(0.50, axis=1),
+        "Faixa superior": resultados_df.quantile(0.75, axis=1),
+        "Cenário otimista": resultados_df.quantile(0.95, axis=1),
     })
 
     return percentis, resultados_df
 
 
-def calcular_stress(peso_rf, peso_etf, cenarios):
+def calcular_simulacao_crise(peso_renda_fixa, peso_etfs, cenarios):
+    """
+    Calcula impacto dos cenários de crise na carteira.
+    """
     linhas = []
 
     for nome, c in cenarios.items():
-        rf_brl = (1 + c["RF_USD"]) * (1 + c["Dolar"]) - 1
-        etf_brl = (1 + c["ETF_USD"]) * (1 + c["Dolar"]) - 1
+        renda_fixa_brl = (1 + c["Renda Fixa em USD"]) * (1 + c["Variação do Dólar"]) - 1
+        etfs_brl = (1 + c["ETFs em USD"]) * (1 + c["Variação do Dólar"]) - 1
 
-        retorno_carteira = peso_rf * rf_brl + peso_etf * etf_brl
+        impacto_carteira = peso_renda_fixa * renda_fixa_brl + peso_etfs * etfs_brl
 
         linhas.append({
             "Cenário": nome,
-            "RF USD": c["RF_USD"],
-            "ETF USD": c["ETF_USD"],
-            "Dólar": c["Dolar"],
-            "RF em BRL": rf_brl,
-            "ETF em BRL": etf_brl,
-            "Impacto Carteira": retorno_carteira
+            "Renda Fixa em USD": c["Renda Fixa em USD"],
+            "ETFs em USD": c["ETFs em USD"],
+            "Variação do Dólar": c["Variação do Dólar"],
+            "Renda Fixa em BRL": renda_fixa_brl,
+            "ETFs em BRL": etfs_brl,
+            "Impacto na Carteira": impacto_carteira
         })
 
     return pd.DataFrame(linhas)
 
 
+def formatar_datas_tabela(df, coluna_data="Data"):
+    """
+    Cria cópia do dataframe formatando coluna de data sem hora.
+    """
+    tabela = df.copy()
+
+    if coluna_data in tabela.columns:
+        tabela[coluna_data] = pd.to_datetime(tabela[coluna_data]).dt.strftime("%d/%m/%Y")
+
+    return tabela
+
+
 # =========================
-# TÍTULO
+# CABEÇALHO
 # =========================
 
-#st.title("M Wealth - Simulador Quantitativo")
+st.markdown("<br>", unsafe_allow_html=True)
 
-#st.markdown(
-#    """
-#    Simulador institucional para construção gradual de exposição internacional em ETFs,
-#    com plano de evolução da carteira, cenários, risco histórico, stress test e Monte Carlo.
-#    """
-#)
+col_logo, col_titulo = st.columns([1.1, 5])
+
+with col_logo:
+    try:
+        st.image("Logo-M-Wealth.png", width=210)
+    except Exception:
+        st.write("M Wealth")
+
+with col_titulo:
+    st.title("Simulador Patrimonial Internacional")
+    st.markdown(
+        """
+        Ferramenta para planejar, de forma gradual e controlada, a exposição internacional em ETFs.
+        """
+    )
 
 
 # =========================
@@ -405,33 +506,6 @@ def calcular_stress(peso_rf, peso_etf, cenarios):
 st.sidebar.header("Configurações")
 
 hoje = date.today()
-
-def moeda_para_float(valor):
-    """
-    Converte texto em padrão brasileiro para float.
-    Ex:
-    R$ 4.098.000,00 -> 4098000.00
-    """
-    if isinstance(valor, (int, float)):
-        return float(valor)
-
-    valor = str(valor)
-    valor = valor.replace("R$", "")
-    valor = valor.replace(" ", "")
-    valor = valor.replace(".", "")
-    valor = valor.replace(",", ".")
-
-    try:
-        return float(valor)
-    except Exception:
-        return 0.0
-
-
-def float_para_moeda(valor):
-    """
-    Converte float para padrão brasileiro.
-    """
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 patrimonio_inicial_txt = st.sidebar.text_input(
     "Patrimônio inicial",
@@ -443,7 +517,7 @@ patrimonio_inicial = moeda_para_float(patrimonio_inicial_txt)
 st.sidebar.subheader("Horizonte")
 
 data_final = st.sidebar.date_input(
-    "Data Final",
+    "Data final",
     value=date(2028, 9, 30)
 )
 
@@ -457,17 +531,17 @@ st.sidebar.write(f"Meses até a meta: **{meses}**")
 
 st.sidebar.subheader("Meta")
 
-meta_rv = st.sidebar.slider(
-    "Meta Final em ETFs (%)",
+meta_etfs = st.sidebar.slider(
+    "Meta final em ETFs (%)",
     min_value=0,
     max_value=100,
     value=20,
     step=1
 )
 
-meta_rf = 100 - meta_rv
+meta_renda_fixa = 100 - meta_etfs
 
-st.sidebar.write(f"Meta RF: **{meta_rf}%**")
+st.sidebar.write(f"Meta em Renda Fixa: **{meta_renda_fixa}%**")
 
 st.sidebar.subheader("Aportes")
 
@@ -496,16 +570,16 @@ aporte_2027 = moeda_para_float(aporte_2027_txt)
 aporte_2028 = moeda_para_float(aporte_2028_txt)
 aporte_padrao = moeda_para_float(aporte_padrao_txt)
 
-st.sidebar.subheader("Proxy de RF Offshore")
+st.sidebar.subheader("Renda Fixa Internacional")
 
-rf_proxy = st.sidebar.selectbox(
-    "ETF usado como proxy da RF",
+referencia_renda_fixa = st.sidebar.selectbox(
+    "Referência usada para a Renda Fixa",
     ["SHY", "IEF", "SGOV", "BIL", "TLT"],
     index=1
 )
 
 st.sidebar.caption(
-    "SHY = Treasury curto | IEF = Treasury intermediário | TLT = Treasury longo | SGOV/BIL = T-Bills"
+    "Essa referência é usada apenas para estimar risco e retorno histórico da parcela conservadora internacional."
 )
 
 st.sidebar.subheader("ETFs")
@@ -536,10 +610,8 @@ anos_historico = st.sidebar.slider(
 
 data_inicio_historico = hoje - timedelta(days=365 * anos_historico)
 
-st.sidebar.write(f"Início do histórico: **{data_inicio_historico.strftime('%d/%m/%Y')}**")
-
 n_simulacoes = st.sidebar.slider(
-    "Simulações Monte Carlo",
+    "Quantidade de simulações",
     min_value=500,
     max_value=5000,
     value=1000,
@@ -552,63 +624,68 @@ n_simulacoes = st.sidebar.slider(
 # =========================
 
 if len(etfs) == 0:
-    st.warning("Selecione ou insira pelo menos um ETF.")
+    st.warning("Insira pelo menos um ETF.")
     st.stop()
 
-tickers_para_baixar = list(dict.fromkeys(etfs + [rf_proxy, "BRL=X"]))
+tickers_para_baixar = list(dict.fromkeys(etfs + [referencia_renda_fixa, "BRL=X"]))
 
-with st.spinner("Baixando dados históricos..."):
+with st.spinner("Buscando dados históricos..."):
     precos = baixar_precos(tickers_para_baixar, data_inicio_historico.strftime("%Y-%m-%d"))
 
 if precos.empty:
-    st.error("Não foi possível baixar os dados históricos. Verifique os tickers.")
+    st.error("Não foi possível baixar os dados históricos. Verifique os tickers informados.")
     st.stop()
 
 ativos_validos = list(precos.columns)
 
 if "BRL=X" not in ativos_validos:
-    st.error("Não foi possível puxar o dólar BRL=X.")
+    st.error("Não foi possível puxar o histórico do dólar.")
     st.stop()
 
-if rf_proxy not in ativos_validos:
-    st.error(f"Não foi possível puxar o proxy de RF: {rf_proxy}.")
+if referencia_renda_fixa not in ativos_validos:
+    st.error(f"Não foi possível puxar a referência de Renda Fixa: {referencia_renda_fixa}.")
     st.stop()
 
 etfs_validos = [ticker for ticker in etfs if ticker in ativos_validos]
 
 if len(etfs_validos) == 0:
-    st.error("Nenhum ETF selecionado retornou dados válidos.")
+    st.error("Nenhum ETF informado retornou dados válidos.")
     st.stop()
 
 retornos_mensais = transformar_diario_para_mensal(precos)
 
 retorno_dolar = retornos_mensais["BRL=X"].rename("Dólar")
-retorno_rf_usd = retornos_mensais[rf_proxy].rename("RF_USD")
+retorno_renda_fixa_usd = retornos_mensais[referencia_renda_fixa].rename("Renda Fixa USD")
 
 retornos_etfs_usd = retornos_mensais[etfs_validos]
-retorno_etf_usd = retornos_etfs_usd.mean(axis=1).rename("ETFs_USD")
+retorno_etfs_usd = retornos_etfs_usd.mean(axis=1).rename("ETFs USD")
 
 base_risco = pd.concat(
-    [retorno_rf_usd, retorno_etf_usd, retorno_dolar],
+    [retorno_renda_fixa_usd, retorno_etfs_usd, retorno_dolar],
     axis=1
 ).dropna()
 
-base_risco["RF_BRL"] = (1 + base_risco["RF_USD"]) * (1 + base_risco["Dólar"]) - 1
-base_risco["ETFs_BRL"] = (1 + base_risco["ETFs_USD"]) * (1 + base_risco["Dólar"]) - 1
+base_risco["Renda Fixa em BRL"] = (1 + base_risco["Renda Fixa USD"]) * (1 + base_risco["Dólar"]) - 1
+base_risco["ETFs em BRL"] = (1 + base_risco["ETFs USD"]) * (1 + base_risco["Dólar"]) - 1
 
-base_carteira = base_risco[["RF_BRL", "ETFs_BRL"]].dropna()
+base_carteira = base_risco[["Renda Fixa em BRL", "ETFs em BRL"]].dropna()
 
 media_mensal = base_carteira.mean().values
 cov_mensal = base_carteira.cov().values
 
-ret_rf_aa, vol_rf_aa, dd_rf, var_rf = calcular_metricas_mensais(base_carteira["RF_BRL"])
-ret_etf_aa, vol_etf_aa, dd_etf, var_etf = calcular_metricas_mensais(base_carteira["ETFs_BRL"])
+ret_renda_fixa_aa, vol_renda_fixa_aa, queda_renda_fixa, perda_ruim_renda_fixa = calcular_metricas_mensais(
+    base_carteira["Renda Fixa em BRL"]
+)
 
-correlacao_rf_etf = base_carteira.corr().iloc[0, 1]
+ret_etfs_aa, vol_etfs_aa, queda_etfs, perda_ruim_etfs = calcular_metricas_mensais(
+    base_carteira["ETFs em BRL"]
+)
+
+relacao_renda_fixa_etfs = base_carteira.corr().iloc[0, 1]
 
 
 # =========================
-# Plano de evolução da carteira
+# PLANO DE EVOLUÇÃO DA CARTEIRA
 # =========================
 
 fluxo_df = gerar_fluxo_mensal(
@@ -620,17 +697,21 @@ fluxo_df = gerar_fluxo_mensal(
     aporte_padrao=aporte_padrao
 )
 
-historico_mensal_df, resumo = calcular_glide_path(
+historico_mensal_df, resumo = calcular_plano_evolucao(
     patrimonio_inicial=patrimonio_inicial,
     fluxo_df=fluxo_df,
-    meta_rv=meta_rv,
+    meta_etfs=meta_etfs,
     meses=meses
 )
 
 matriz_cov_anual = base_carteira.cov() * 12
-pesos_finais = np.array([meta_rf / 100, meta_rv / 100])
 
-vol_final = np.sqrt(
+pesos_finais = np.array([
+    meta_renda_fixa / 100,
+    meta_etfs / 100
+])
+
+oscilacao_final = np.sqrt(
     np.dot(
         pesos_finais.T,
         np.dot(matriz_cov_anual.values, pesos_finais)
@@ -638,34 +719,34 @@ vol_final = np.sqrt(
 )
 
 retorno_final = (
-    pesos_finais[0] * ret_rf_aa +
-    pesos_finais[1] * ret_etf_aa
+    pesos_finais[0] * ret_renda_fixa_aa +
+    pesos_finais[1] * ret_etfs_aa
 )
 
-sharpe_simples = retorno_final / vol_final if vol_final != 0 else np.nan
+eficiencia_risco_retorno = retorno_final / oscilacao_final if oscilacao_final != 0 else np.nan
 
 
 # =========================
-# EVOLUÇÃO DA VOLATILIDADE PELO Plano de evolução da carteira
+# EVOLUÇÃO DA OSCILAÇÃO PELO PLANO
 # =========================
 
-historico_mensal_df["Volatilidade Projetada"] = np.nan
+historico_mensal_df["Oscilação Projetada"] = np.nan
 
 for idx, linha in historico_mensal_df.iterrows():
 
-    peso_rf = linha["% RF"]
-    peso_etf = linha["% ETFs"]
+    peso_renda_fixa = linha["% Renda Fixa"]
+    peso_etfs = linha["% ETFs"]
 
-    pesos_dinamicos = np.array([peso_rf, peso_etf])
+    pesos_dinamicos = np.array([peso_renda_fixa, peso_etfs])
 
-    vol_dinamica = np.sqrt(
+    oscilacao_dinamica = np.sqrt(
         np.dot(
             pesos_dinamicos.T,
             np.dot(matriz_cov_anual.values, pesos_dinamicos)
         )
     )
 
-    historico_mensal_df.loc[idx, "Volatilidade Projetada"] = vol_dinamica
+    historico_mensal_df.loc[idx, "Oscilação Projetada"] = oscilacao_dinamica
 
 
 # =========================
@@ -674,32 +755,32 @@ for idx, linha in historico_mensal_df.iterrows():
 
 cenario_conservador = simular_cenario(
     historico_mensal_df,
-    retorno_rf_aa=max(ret_rf_aa - 0.02, -0.10),
-    retorno_etf_aa=max(ret_etf_aa - 0.06, -0.20)
+    retorno_renda_fixa_aa=max(ret_renda_fixa_aa - 0.02, -0.10),
+    retorno_etfs_aa=max(ret_etfs_aa - 0.06, -0.20)
 )
 
 cenario_base = simular_cenario(
     historico_mensal_df,
-    retorno_rf_aa=ret_rf_aa,
-    retorno_etf_aa=ret_etf_aa
+    retorno_renda_fixa_aa=ret_renda_fixa_aa,
+    retorno_etfs_aa=ret_etfs_aa
 )
 
 cenario_otimista = simular_cenario(
     historico_mensal_df,
-    retorno_rf_aa=ret_rf_aa + 0.02,
-    retorno_etf_aa=ret_etf_aa + 0.06
+    retorno_renda_fixa_aa=ret_renda_fixa_aa + 0.02,
+    retorno_etfs_aa=ret_etfs_aa + 0.06
 )
 
 cenarios_df = pd.DataFrame({
     "Cenário": ["Conservador", "Base", "Otimista"],
-    "Retorno RF a.a.": [max(ret_rf_aa - 0.02, -0.10), ret_rf_aa, ret_rf_aa + 0.02],
-    "Retorno ETFs a.a.": [max(ret_etf_aa - 0.06, -0.20), ret_etf_aa, ret_etf_aa + 0.06],
+    "Retorno Renda Fixa a.a.": [max(ret_renda_fixa_aa - 0.02, -0.10), ret_renda_fixa_aa, ret_renda_fixa_aa + 0.02],
+    "Retorno ETFs a.a.": [max(ret_etfs_aa - 0.06, -0.20), ret_etfs_aa, ret_etfs_aa + 0.06],
     "Patrimônio Final": [
         cenario_conservador.iloc[-1]["Patrimônio"],
         cenario_base.iloc[-1]["Patrimônio"],
         cenario_otimista.iloc[-1]["Patrimônio"]
     ],
-    "% Final ETFs": [
+    "% Final em ETFs": [
         cenario_conservador.iloc[-1]["% ETFs"],
         cenario_base.iloc[-1]["% ETFs"],
         cenario_otimista.iloc[-1]["% ETFs"]
@@ -708,47 +789,48 @@ cenarios_df = pd.DataFrame({
 
 
 # =========================
-# MONTE CARLO
+# SIMULAÇÃO PROBABILÍSTICA
 # =========================
 
-percentis_mc, resultados_mc = rodar_monte_carlo(
+percentis_mc, resultados_mc = rodar_simulacao_probabilistica(
     historico_df=historico_mensal_df,
     media_mensal=media_mensal,
     cov_mensal=cov_mensal,
     n_simulacoes=n_simulacoes
 )
 
+
 # =========================
-# STRESS TEST
+# SIMULAÇÃO DE CRISE
 # =========================
 
-cenarios_stress = {
+cenarios_crise = {
     "Crise Global": {
-        "RF_USD": 0.04,
-        "ETF_USD": -0.25,
-        "Dolar": 0.15
+        "Renda Fixa em USD": 0.04,
+        "ETFs em USD": -0.25,
+        "Variação do Dólar": 0.15
     },
     "Brasil Risk-Off": {
-        "RF_USD": 0.02,
-        "ETF_USD": -0.08,
-        "Dolar": 0.20
+        "Renda Fixa em USD": 0.02,
+        "ETFs em USD": -0.08,
+        "Variação do Dólar": 0.20
     },
-    "Abertura de Juros EUA": {
-        "RF_USD": -0.07,
-        "ETF_USD": -0.10,
-        "Dolar": 0.08
+    "Abertura de Juros nos EUA": {
+        "Renda Fixa em USD": -0.07,
+        "ETFs em USD": -0.10,
+        "Variação do Dólar": 0.08
     },
-    "Soft Landing": {
-        "RF_USD": 0.04,
-        "ETF_USD": 0.12,
-        "Dolar": -0.05
+    "Cenário Positivo Global": {
+        "Renda Fixa em USD": 0.04,
+        "ETFs em USD": 0.12,
+        "Variação do Dólar": -0.05
     }
 }
 
-stress_df = calcular_stress(
-    peso_rf=meta_rf / 100,
-    peso_etf=meta_rv / 100,
-    cenarios=cenarios_stress
+crise_df = calcular_simulacao_crise(
+    peso_renda_fixa=meta_renda_fixa / 100,
+    peso_etfs=meta_etfs / 100,
+    cenarios=cenarios_crise
 )
 
 
@@ -756,14 +838,14 @@ stress_df = calcular_stress(
 # ABAS
 # =========================
 
-aba_resumo, aba_ativos, aba_simulacoes, aba_avancado = st.tabs(
+aba_resumo, aba_ativos, aba_simulacoes = st.tabs(
     [
         "Resumo e Plano",
         "Ativos e Risco",
-        "Cenários e Simulações",
-        "Avançado"
+        "Cenários e Simulações"
     ]
 )
+
 
 # =========================
 # ABA 1 — RESUMO E PLANO
@@ -775,113 +857,116 @@ with aba_resumo:
 
     st.markdown(
         """
-        Esta aba mostra a trajetória necessária para que a carteira alcance a alocação-alvo
-        dentro do prazo definido, considerando os aportes mensais informados.
+        Esta seção mostra como a carteira pode evoluir até a alocação desejada,
+        indicando quanto deve ser direcionado mensalmente para Renda Fixa e para ETFs.
+
+        A ideia é construir a exposição de forma gradual, sem necessidade de uma mudança brusca na carteira atual.
         """
     )
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Patrimônio Inicial", formatar_moeda(patrimonio_inicial))
+        st.metric("Patrimônio inicial", formatar_moeda(patrimonio_inicial))
 
     with col2:
-        st.metric("Patrimônio Final sem Rentabilidade", formatar_moeda(resumo["patrimonio_final_sem_rentabilidade"]))
+        st.metric("Patrimônio estimado sem rentabilidade", formatar_moeda(resumo["patrimonio_final_sem_rentabilidade"]))
 
     with col3:
-        st.metric("Meta Financeira em ETFs", formatar_moeda(resumo["meta_rv_financeira"]))
+        st.metric("Meta financeira em ETFs", formatar_moeda(resumo["meta_etfs_financeira"]))
 
     with col4:
-        st.metric("Meses até a Meta", meses)
+        st.metric("Meses até a meta", meses)
 
     col5, col6, col7, col8 = st.columns(4)
 
     with col5:
-        st.metric("Aporte Médio em ETFs", formatar_moeda(resumo["aporte_mensal_medio_etfs"]))
+        st.metric("Aporte médio em ETFs", formatar_moeda(resumo["aporte_mensal_medio_etfs"]))
 
     with col6:
-        st.metric("Aporte Médio em RF", formatar_moeda(resumo["aporte_mensal_medio_rf"]))
+        st.metric("Aporte médio em Renda Fixa", formatar_moeda(resumo["aporte_mensal_medio_renda_fixa"]))
 
     with col7:
-        st.metric(f"Vol Final {meta_rf}/{meta_rv}", f"{vol_final:.2%}")
+        st.metric("Oscilação esperada da carteira", f"{oscilacao_final:.2%}")
 
     with col8:
-        st.metric("Sharpe Simples", f"{sharpe_simples:.2f}")
+        st.metric("Eficiência risco-retorno", f"{eficiencia_risco_retorno:.2f}")
 
-    st.subheader("Convergência para a Meta")
+    st.subheader("Evolução até a meta")
 
-    fig_glide = go.Figure()
+    fig_plano = go.Figure()
 
-    fig_glide.add_trace(
+    fig_plano.add_trace(
         go.Scatter(
             x=historico_mensal_df["Data"],
             y=historico_mensal_df["% ETFs"] * 100,
             mode="lines+markers",
-            name="% ETFs"
+            name="% em ETFs"
         )
     )
 
-    fig_glide.add_hline(
-        y=meta_rv,
+    fig_plano.add_hline(
+        y=meta_etfs,
         line_dash="dash",
-        annotation_text="Meta Final",
+        annotation_text="Meta final",
         annotation_position="top left"
     )
 
-    fig_glide.update_layout(
+    fig_plano.update_layout(
         title="Evolução da Exposição em ETFs",
         xaxis_title="Data",
         yaxis_title="% em ETFs"
     )
 
-    st.plotly_chart(fig_glide, use_container_width=True)
+    st.plotly_chart(fig_plano, use_container_width=True)
 
-    st.subheader("Evolução da Volatilidade da Carteira")
+    st.subheader("Evolução da oscilação esperada")
 
     st.markdown(
         """
-        A volatilidade projetada considera a mudança gradual dos pesos entre RF e ETFs
-        ao longo do tempo, usando o histórico do proxy de RF e da carteira de ETFs em BRL.
+        A oscilação projetada mostra como o risco da carteira tende a mudar conforme a exposição em ETFs aumenta ao longo do tempo.
         """
     )
 
-    fig_vol = go.Figure()
+    fig_oscilacao = go.Figure()
 
-    fig_vol.add_trace(
+    fig_oscilacao.add_trace(
         go.Scatter(
             x=historico_mensal_df["Data"],
-            y=historico_mensal_df["Volatilidade Projetada"] * 100,
+            y=historico_mensal_df["Oscilação Projetada"] * 100,
             mode="lines+markers",
-            name="Volatilidade Projetada"
+            name="Oscilação projetada"
         )
     )
 
-    fig_vol.update_layout(
-        title="Volatilidade Anualizada Projetada pelo Plano de evolução da carteira",
+    fig_oscilacao.update_layout(
+        title="Oscilação Anualizada Projetada pelo Plano de Evolução",
         xaxis_title="Data",
-        yaxis_title="Volatilidade Anualizada (%)"
+        yaxis_title="Oscilação anualizada (%)"
     )
 
-    st.plotly_chart(fig_vol, use_container_width=True)
+    st.plotly_chart(fig_oscilacao, use_container_width=True)
 
-    st.subheader("Plano Mensal de Aportes")
+    st.subheader("Plano mensal de aportes")
+
+    historico_tabela = formatar_datas_tabela(historico_mensal_df, "Data")
 
     st.dataframe(
-        historico_mensal_df.style.format({
+        historico_tabela.style.format({
             "Aporte Total": "R$ {:,.2f}",
             "Aporte em ETFs": "R$ {:,.2f}",
-            "Aporte em RF": "R$ {:,.2f}",
-            "Saldo ETFs": "R$ {:,.2f}",
-            "Saldo RF": "R$ {:,.2f}",
+            "Aporte em Renda Fixa": "R$ {:,.2f}",
+            "Saldo em ETFs": "R$ {:,.2f}",
+            "Saldo em Renda Fixa": "R$ {:,.2f}",
             "Patrimônio Total": "R$ {:,.2f}",
             "% ETFs": "{:.2%}",
-            "% RF": "{:.2%}",
-            "Volatilidade Projetada": "{:.2%}"
+            "% Renda Fixa": "{:.2%}",
+            "Oscilação Projetada": "{:.2%}"
         }),
         use_container_width=True
     )
 
-    st.subheader("Distribuição Mensal dos Aportes")
+    st.subheader("Distribuição mensal dos aportes")
 
     fig_aportes = go.Figure()
 
@@ -896,8 +981,8 @@ with aba_resumo:
     fig_aportes.add_trace(
         go.Bar(
             x=historico_mensal_df["Data"],
-            y=historico_mensal_df["Aporte em RF"],
-            name="Aporte em RF"
+            y=historico_mensal_df["Aporte em Renda Fixa"],
+            name="Aporte em Renda Fixa"
         )
     )
 
@@ -917,53 +1002,60 @@ with aba_resumo:
 
 with aba_ativos:
 
-    st.header("Ativos e Risco Histórico")
+    st.header("Ativos Utilizados e Comportamento Histórico")
 
-    st.subheader("Ativos utilizados")
+    st.markdown(
+        """
+        Esta seção mostra os ativos usados como referência no estudo e o comportamento histórico deles.
+
+        A Renda Fixa Internacional é representada por um ETF de Treasury americano líquido,
+        usado apenas como referência de risco e retorno.
+        """
+    )
 
     col_a1, col_a2, col_a3 = st.columns(3)
 
     with col_a1:
-        st.metric("Proxy RF", rf_proxy)
+        st.metric("Referência de Renda Fixa", referencia_renda_fixa)
 
     with col_a2:
-        st.metric("ETFs válidos", len(etfs_validos))
+        st.metric("Quantidade de ETFs", len(etfs_validos))
 
     with col_a3:
-        st.metric("Correlação RF x ETFs", f"{correlacao_rf_etf:.2f}")
+        st.metric("Relação entre Renda Fixa e ETFs", f"{relacao_renda_fixa_etfs:.2f}")
 
     st.write("ETFs considerados:", etfs_validos)
 
     metricas_risco = pd.DataFrame({
-        "Classe": ["RF Proxy em BRL", "ETFs em BRL"],
-        "Retorno Anual": [ret_rf_aa, ret_etf_aa],
-        "Volatilidade Anual": [vol_rf_aa, vol_etf_aa],
-        "Drawdown Máximo": [dd_rf, dd_etf],
-        "VaR Mensal 95%": [var_rf, var_etf]
+        "Classe": ["Renda Fixa Internacional em BRL", "ETFs Internacionais em BRL"],
+        "Retorno Anual": [ret_renda_fixa_aa, ret_etfs_aa],
+        "Oscilação Anual": [vol_renda_fixa_aa, vol_etfs_aa],
+        "Maior queda histórica": [queda_renda_fixa, queda_etfs],
+        "Perda mensal estimada em cenário ruim": [perda_ruim_renda_fixa, perda_ruim_etfs]
     })
 
     st.dataframe(
         metricas_risco.style.format({
             "Retorno Anual": "{:.2%}",
-            "Volatilidade Anual": "{:.2%}",
-            "Drawdown Máximo": "{:.2%}",
-            "VaR Mensal 95%": "{:.2%}"
+            "Oscilação Anual": "{:.2%}",
+            "Maior queda histórica": "{:.2%}",
+            "Perda mensal estimada em cenário ruim": "{:.2%}"
         }),
         use_container_width=True
     )
 
-    st.subheader("Correlação")
+    st.subheader("Relação histórica entre as classes")
 
     fig_corr = px.imshow(
         base_carteira.corr(),
         text_auto=".2f",
         aspect="auto",
-        title="Correlação RF Proxy x ETFs em BRL"
+        title="Relação Histórica entre Renda Fixa e ETFs"
     )
 
     st.plotly_chart(fig_corr, use_container_width=True)
 
-    st.subheader("Performance Histórica em BRL")
+    st.subheader("Performance histórica em reais")
 
     perf = (1 + base_carteira).cumprod() - 1
 
@@ -980,11 +1072,55 @@ with aba_ativos:
         )
 
     fig_perf.update_layout(
-        title="Retorno Acumulado — RF Proxy e ETFs em BRL",
-        yaxis_tickformat=".0%"
+        title="Retorno Acumulado em BRL",
+        yaxis_tickformat=".0%",
+        xaxis_title="Data",
+        yaxis_title="Retorno acumulado"
     )
 
     st.plotly_chart(fig_perf, use_container_width=True)
+
+    with st.expander("Ver detalhes técnicos do modelo"):
+        st.markdown(
+            """
+            Esta área concentra as bases quantitativas usadas nos cálculos.
+            Ela serve para validação interna da equipe, não necessariamente para apresentação ao cliente.
+            """
+        )
+
+        st.subheader("Base mensal de retornos")
+
+        base_carteira_tabela = base_carteira.tail(24).copy()
+        base_carteira_tabela.index = pd.to_datetime(base_carteira_tabela.index).strftime("%d/%m/%Y")
+
+        st.dataframe(
+            base_carteira_tabela.style.format("{:.2%}"),
+            use_container_width=True
+        )
+
+        st.subheader("Matriz de relação entre os ativos")
+
+        st.dataframe(
+            base_carteira.cov().style.format("{:.6f}"),
+            use_container_width=True
+        )
+
+        st.subheader("Matriz anualizada de risco")
+
+        st.dataframe(
+            matriz_cov_anual.style.format("{:.6f}"),
+            use_container_width=True
+        )
+
+        st.subheader("Retornos mensais dos ETFs")
+
+        retornos_etfs_tabela = retornos_etfs_usd.tail(24).copy()
+        retornos_etfs_tabela.index = pd.to_datetime(retornos_etfs_tabela.index).strftime("%d/%m/%Y")
+
+        st.dataframe(
+            retornos_etfs_tabela.style.format("{:.2%}"),
+            use_container_width=True
+        )
 
 
 # =========================
@@ -997,21 +1133,17 @@ with aba_simulacoes:
 
     st.markdown(
         """
-        Esta aba concentra as análises prospectivas da carteira.  
+        Esta seção concentra as análises prospectivas da carteira.  
         O objetivo é visualizar diferentes possibilidades de evolução patrimonial,
-        desde cenários determinísticos até simulações probabilísticas e choques de mercado.
+        desde cenários simples até simulações probabilísticas e cenários de crise.
         """
     )
 
-    # =========================
-    # CENÁRIOS
-    # =========================
-
-    st.subheader("1. Cenários Patrimoniais")
+    st.subheader("1. Cenários patrimoniais")
 
     st.markdown(
         """
-        Os cenários patrimoniais usam hipóteses anuais de retorno para RF e ETFs.
+        Os cenários patrimoniais usam hipóteses anuais de retorno para Renda Fixa e ETFs.
         Eles ajudam a visualizar uma trajetória conservadora, uma trajetória base
         e uma trajetória otimista até a data final do estudo.
         """
@@ -1019,10 +1151,10 @@ with aba_simulacoes:
 
     st.dataframe(
         cenarios_df.style.format({
-            "Retorno RF a.a.": "{:.2%}",
+            "Retorno Renda Fixa a.a.": "{:.2%}",
             "Retorno ETFs a.a.": "{:.2%}",
             "Patrimônio Final": "R$ {:,.2f}",
-            "% Final ETFs": "{:.2%}"
+            "% Final em ETFs": "{:.2%}"
         }),
         use_container_width=True
     )
@@ -1066,36 +1198,31 @@ with aba_simulacoes:
 
     st.divider()
 
-    # =========================
-    # MONTE CARLO
-    # =========================
-
-    st.subheader("2. Monte Carlo")
+    st.subheader("2. Simulação probabilística")
 
     st.markdown(
         """
-        O Monte Carlo simula milhares de trajetórias possíveis para o patrimônio,
-        usando a média, volatilidade e covariância histórica mensal entre o proxy de RF
-        e a carteira de ETFs, ambos convertidos para BRL.
+        Esta simulação gera milhares de caminhos possíveis para o patrimônio,
+        com base no comportamento histórico da Renda Fixa Internacional e dos ETFs.
 
-        O resultado mostra uma faixa probabilística de patrimônio futuro.
+        O objetivo não é prever exatamente o futuro, mas mostrar uma faixa provável de resultados.
         """
     )
 
     col_mc1, col_mc2, col_mc3 = st.columns(3)
 
     with col_mc1:
-        st.metric("Simulações", n_simulacoes)
+        st.metric("Quantidade de simulações", n_simulacoes)
 
     with col_mc2:
-        st.metric("P50 Final", formatar_moeda(percentis_mc.iloc[-1]["P50"]))
+        st.metric("Cenário central", formatar_moeda(percentis_mc.iloc[-1]["Cenário central"]))
 
     with col_mc3:
-        st.metric("P5 Final", formatar_moeda(percentis_mc.iloc[-1]["P5"]))
+        st.metric("Cenário pessimista", formatar_moeda(percentis_mc.iloc[-1]["Cenário pessimista"]))
 
     fig_mc = go.Figure()
 
-    for coluna in ["P95", "P75", "P50", "P25", "P5"]:
+    for coluna in ["Cenário otimista", "Faixa superior", "Cenário central", "Faixa inferior", "Cenário pessimista"]:
         fig_mc.add_trace(
             go.Scatter(
                 x=percentis_mc.index,
@@ -1106,7 +1233,7 @@ with aba_simulacoes:
         )
 
     fig_mc.update_layout(
-        title="Cone Probabilístico — Monte Carlo",
+        title="Faixa Provável de Evolução Patrimonial",
         xaxis_title="Data",
         yaxis_title="Patrimônio"
     )
@@ -1115,102 +1242,45 @@ with aba_simulacoes:
 
     percentis_tabela = percentis_mc.tail(12).copy()
     percentis_tabela.index = pd.to_datetime(percentis_tabela.index).strftime("%d/%m/%Y")
-    
+
     st.dataframe(
         percentis_tabela.style.format("R$ {:,.2f}"),
         use_container_width=True
     )
+
     st.divider()
 
-    # =========================
-    # STRESS TEST
-    # =========================
-
-    st.subheader("3. Stress Test")
+    st.subheader("3. Simulação de crise")
 
     st.markdown(
         """
-        O stress test aplica choques simultâneos em três componentes:
-
-        - RF em dólar;
-        - ETFs em dólar;
-        - câmbio USD/BRL.
-
-        A análise mostra como a carteira alvo reagiria em cenários extremos,
-        já convertidos para BRL.
+        A simulação de crise mostra como a carteira poderia se comportar em cenários adversos,
+        como queda dos mercados internacionais, alta do dólar ou abertura de juros nos Estados Unidos.
         """
     )
 
     st.dataframe(
-        stress_df.style.format({
-            "RF USD": "{:.2%}",
-            "ETF USD": "{:.2%}",
-            "Dólar": "{:.2%}",
-            "RF em BRL": "{:.2%}",
-            "ETF em BRL": "{:.2%}",
-            "Impacto Carteira": "{:.2%}"
+        crise_df.style.format({
+            "Renda Fixa em USD": "{:.2%}",
+            "ETFs em USD": "{:.2%}",
+            "Variação do Dólar": "{:.2%}",
+            "Renda Fixa em BRL": "{:.2%}",
+            "ETFs em BRL": "{:.2%}",
+            "Impacto na Carteira": "{:.2%}"
         }),
         use_container_width=True
     )
 
-    fig_stress = px.bar(
-        stress_df,
+    fig_crise = px.bar(
+        crise_df,
         x="Cenário",
-        y="Impacto Carteira",
-        title="Impacto Estimado por Cenário de Stress",
+        y="Impacto na Carteira",
+        title="Impacto Estimado em Cenários de Crise",
         text_auto=".2%"
     )
 
-    fig_stress.update_layout(
+    fig_crise.update_layout(
         yaxis_tickformat=".0%"
     )
 
-    st.plotly_chart(fig_stress, use_container_width=True)
-
-
-# =========================
-# ABA 7 — AVANÇADO
-# =========================
-
-with aba_avancado:
-
-    st.header("Avançado")
-
-    st.markdown(
-        """
-        Esta aba concentra as bases técnicas usadas nos cálculos.
-        Ela não precisa ser usada em reunião, mas ajuda na validação do modelo,
-        auditoria dos dados e conferência das premissas quantitativas.
-        """
-    )
-
-    st.subheader("Base de risco mensal")
-
-    st.dataframe(
-        base_carteira.tail(24).style.format("{:.2%}"),
-        use_container_width=True
-    )
-
-    st.subheader("Matriz de covariância mensal")
-
-    st.dataframe(
-        base_carteira.cov().style.format("{:.6f}"),
-        use_container_width=True
-    )
-
-    st.subheader("Matriz de covariância anualizada")
-
-    st.dataframe(
-        matriz_cov_anual.style.format("{:.6f}"),
-        use_container_width=True
-    )
-
-    st.subheader("ETFs individuais — retornos mensais")
-
-    st.dataframe(
-        retornos_etfs_usd.tail(24).style.format("{:.2%}"),
-        use_container_width=True
-    )
-
-
-st.success("App carregado com sucesso.")
+    st.plotly_chart(fig_crise, use_container_width=True)
