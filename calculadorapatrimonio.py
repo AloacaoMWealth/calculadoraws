@@ -503,8 +503,6 @@ with col_titulo:
 # SIDEBAR
 # =========================
 
-st.sidebar.header("Configurações")
-
 hoje = date.today()
 
 patrimonio_inicial_txt = st.sidebar.text_input(
