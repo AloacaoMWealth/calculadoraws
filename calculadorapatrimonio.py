@@ -604,12 +604,11 @@ cenarios_df = pd.DataFrame({
 # =========================
 
 percentis_mc, resultados_mc = rodar_monte_carlo(
-    historico_mensal_df=historico_mensal_df,
+    historico_df=historico_mensal_df,
     media_mensal=media_mensal,
     cov_mensal=cov_mensal,
     n_simulacoes=n_simulacoes
 )
-
 
 # =========================
 # STRESS TEST
