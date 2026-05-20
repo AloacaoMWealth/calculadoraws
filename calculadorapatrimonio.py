@@ -87,7 +87,7 @@ st.markdown(
 col_logo, col_titulo = st.columns([1, 5])
 
 with col_logo:
-    st.image("Logo-M-Wealth.png", width=110)
+    st.image("Logo-M-Wealth.png", width=250)
 
 with col_titulo:
     st.title("Simulador Patrimonial Internacional")
